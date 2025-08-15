@@ -85,6 +85,42 @@ private:
     // 子菜单区域
     QFrame* stack_menu_frame = nullptr;
     QStackedWidget* stack_menu = nullptr;
+    
+    // stack_menu中的四个页面
+    QWidget* m_stackMainPage = nullptr;
+    QWidget* m_stackFilePage = nullptr;
+    QWidget* m_stackScannersPage = nullptr;
+    QWidget* m_stackParametersPage = nullptr;
+    
+    // stack_menu页面的布局
+    QVBoxLayout* m_stackMainLayout = nullptr;
+    QVBoxLayout* m_stackFileLayout = nullptr;
+    QVBoxLayout* m_stackScannersLayout = nullptr;
+    QVBoxLayout* m_stackParametersLayout = nullptr;
+    
+    // stack_menu页面中的按钮（复制自tab页面的按钮）
+    QPushButton* m_stackStartAcquisitionBtn = nullptr;
+    QPushButton* m_stackClearAlarmsBtn = nullptr;
+    QPushButton* m_stackAutoZeroBtn = nullptr;
+    QPushButton* m_stackAutoCalibrateBtn = nullptr;
+    QPushButton* m_stackClearPhaseWindowBtn = nullptr;
+    QPushButton* m_stackMoreMainBtn = nullptr;
+    
+    QPushButton* m_stackLoadDataBtn = nullptr;
+    QPushButton* m_stackSaveDataBtn = nullptr;
+    QPushButton* m_stackLoadConfigBtn = nullptr;
+    QPushButton* m_stackSaveDefaultConfigBtn = nullptr;
+    QPushButton* m_stackMoreFileBtn = nullptr;
+    
+    QPushButton* m_stackConnectDisconnectBtn = nullptr;
+    QPushButton* m_stackShowRealtimePositionBtn = nullptr;
+    
+    QPushButton* m_stackSetExcitationFreqBtn = nullptr;
+    QPushButton* m_stackSetSampleRateBtn = nullptr;
+    QPushButton* m_stackSetPreGainBtn = nullptr;
+    QPushButton* m_stackSetPostGainBtn = nullptr;
+    QPushButton* m_stackSetRotationAngleBtn = nullptr;
+    QPushButton* m_stackMoreParametersBtn = nullptr;
 
     QFrame *m_plotArea_frame;
     QFrame *m_plotArea_frame1;
@@ -177,6 +213,7 @@ private:
     void setupSecondRow();  // 第二行：四个绘图/控制区域
     void setupThirdRow();   // 第三行：连接状态 + 四个菜单分栏
     void setupTabContents();
+    void setupStackMenuContents();
     void setupConnections();
     void initializePlots();
 

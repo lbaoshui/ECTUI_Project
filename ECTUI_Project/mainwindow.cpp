@@ -18,8 +18,12 @@ void MainWindow::setupUI()
 {
     // 设置窗口基本属性
     setWindowTitle(tr("ECT 涡流检测上位机"));
-    setMinimumSize(1200, 900);
-    resize(1400, 1000);
+    // setMinimumSize(1200, 900);
+    // resize(1400, 1000);
+    
+    // // 设置窗口启动时最大化
+    // showMaximized();
+    // this->showFullScreen();
 
     // 设置VS Code Modern Dark主题样式
     setStyleSheet(
@@ -62,12 +66,19 @@ void MainWindow::setupUI()
         "    border: 1px solid #3c3c3c;"
         "    background-color: #252526;"
         "}"
+        "QTabBar {"
+        "    qproperty-expanding: true;"
+        "}"
         "QTabBar::tab {"
         "    background-color: #2d2d30;"
         "    color: #cccccc;"
         "    border: 1px solid #3c3c3c;"
-        "    padding: 8px 16px;"
+        "    padding: 15px 30px;"
         "    margin-right: 2px;"
+        "    font-size: 30px;"
+        "    font-weight: bold;"
+        "    min-height: 30px;"
+        "    min-width: 180px;"
         "}"
         "QTabBar::tab:selected {"
         "    background-color: #0e639c;"
@@ -103,6 +114,7 @@ void MainWindow::setupUI()
     m_mainLayout->setStretchFactor(m_mainLayout->itemAt(2)->widget(), 0); // 第三行不拉伸
 
     setupTabContents();
+    setupStackMenuContents();
 
     // 初始化图表和连接信号槽
     initializePlots();
@@ -110,6 +122,8 @@ void MainWindow::setupUI()
 
     // 更新参数显示
     updateParameterDisplay();
+
+    showMaximized();
 }
 
 void MainWindow::setupFirstRow()
@@ -155,9 +169,10 @@ void MainWindow::setupFirstRow()
     
     for (QLabel* label : paramLabels) {
         label->setFont(paramFont);
-        label->setStyleSheet("QLabel { color: white; background-color: #2b2b2b; padding: 5px; border: 1px solid #555; font-weight: bold;}");
+        label->setStyleSheet("QLabel { color: white; background-color: #2b2b2b; padding: 5px; border: 1px solid #555; font-weight: bold; text-align: center; font-size: 30px}");
         label->setMinimumSize(150, 50);
         label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        label->setAlignment(Qt::AlignCenter);
     }
 
     // 布局参数标签 - 3行4列
@@ -179,16 +194,16 @@ void MainWindow::setupFirstRow()
     // 模式信息显示区域
     m_modeInfoFrame = new QFrame(this);
     m_modeInfoFrame->setFrameStyle(QFrame::Box);
-    m_modeInfoFrame->setFixedWidth(200);
+    m_modeInfoFrame->setFixedWidth(380);
     m_modeInfoLayout = new QVBoxLayout(m_modeInfoFrame);
     
-    m_modeInfoLabel = new QLabel(tr("Reflection\nMode)"), this);
+    m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
     m_modeInfoLabel->setAlignment(Qt::AlignCenter);
     QFont modeFont;
     modeFont.setPointSize(10);
     modeFont.setBold(true);
     m_modeInfoLabel->setFont(modeFont);
-    m_modeInfoLabel->setStyleSheet("QLabel { color: #f14c4c; background-color: #252526; border: 1px solid #3c3c3c; padding: 10px; border-radius: 3px; }");
+    m_modeInfoLabel->setStyleSheet("QLabel { color: #f14c4c; background-color: #252526; border: 1px solid #3c3c3c; padding: 10px; border-radius: 3px; font-size: 50px; text-align: center; }");
     m_modeInfoLayout->addWidget(m_modeInfoLabel);
     
     // 添加到第一行布局：参数详情占大部分，模式信息占小部分
@@ -205,7 +220,7 @@ void MainWindow::setupSecondRow()
     m_middleFrame->setFrameStyle(QFrame::Box);
     m_middleFrame->setContentsMargins(QMargins(1,1,1,1));
 
-    m_middleFrame_border = new QFrame(this);
+    // m_middleFrame_border = new QFrame(this);
     // m_middleLayout_border = new QVBoxLayout(m_middleFrame_border);
     m_middleLayout_border = new QHBoxLayout(m_middleFrame);
 
@@ -286,9 +301,11 @@ void MainWindow::setupSecondRow()
     m_virtualButtonLayout->addWidget(m_downBtn, 2, 1);
 
     // 添加控制区域布局
+    m_controlLayout->addStretch();
     m_controlLayout->addWidget(m_confirmCancelFrame);
     m_controlLayout->addWidget(m_virtualButtonFrame);
     m_controlLayout->addStretch();
+    // m_controlLayout->addStretch(1);
 
     // 设置网格布局的行列拉伸比例
     m_middleLayout->setRowStretch(0, 3); // 上排占3倍高度
@@ -307,10 +324,16 @@ void MainWindow::setupSecondRow()
     m_plotArea_frame = new QFrame();
     m_middleLayout_1 = new QVBoxLayout(m_plotArea_frame); //
 
-    stack_menu_frame= new QFrame();
+    stack_menu_frame = new QFrame();
     stack_menu_frame->setFixedWidth(150);
-    stack_menu = new QStackedWidget(stack_menu_frame);
+    stack_menu_frame->setFrameStyle(QFrame::Box);
+    
+    QVBoxLayout* stackFrameLayout = new QVBoxLayout(stack_menu_frame);
+    stackFrameLayout->setContentsMargins(0, 0, 0, 0);
+    
+    stack_menu = new QStackedWidget();
     stack_menu->setFixedWidth(150);
+    stackFrameLayout->addWidget(stack_menu);
 
     m_middleLayout_1->addWidget(m_plotArea_frame1);  // 绘图区1和2
     m_middleLayout_1->addWidget(m_plotArea3);        // 绘图区3
@@ -318,7 +341,7 @@ void MainWindow::setupSecondRow()
     m_middleLayout_border->addWidget(m_plotArea_frame);
     m_middleLayout_border->addWidget(stack_menu_frame);
     m_middleLayout_border->addWidget(m_controlFrame);
-    m_plotArea3->setFixedHeight(200);
+    m_plotArea3->setFixedHeight(150);
     
     m_mainLayout->addWidget(m_middleFrame);
 }
@@ -336,16 +359,16 @@ void MainWindow::setupThirdRow()
     // 设备连接状态显示
     m_connectionStatusFrame = new QFrame(this);
     m_connectionStatusFrame->setFrameStyle(QFrame::Box);
-    m_connectionStatusFrame->setFixedHeight(40);
+    m_connectionStatusFrame->setFixedHeight(60);
     m_connectionStatusLayout = new QHBoxLayout(m_connectionStatusFrame);
     
     m_connectionStatusLabel = new QLabel(tr("设备连接状态显示:"), this);
-    m_connectionStatusLabel->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 16px; border-radius: 3px; }");
+    m_connectionStatusLabel->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 20px; border-radius: 3px; }");
     m_connectionStatusLayout->addWidget(m_connectionStatusLabel);
     m_connectionStatusLayout->setMargin(2);
 
     m_connectionStatusLabel2 = new QLabel(tr("SSEC Board usb not connected"), this);
-    m_connectionStatusLabel2->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 16px; border-radius: 3px; }");
+    m_connectionStatusLabel2->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 20px; border-radius: 3px; }");
     m_connectionStatusLayout->addWidget(m_connectionStatusLabel2);
     
     // 设置连接状态布局间距
@@ -356,7 +379,7 @@ void MainWindow::setupThirdRow()
 
     // 底部四个菜单分栏
     m_bottomTabWidget = new QTabWidget(this);
-    m_bottomTabWidget->setMinimumHeight(110);
+    m_bottomTabWidget->setMaximumHeight(70);
     
     // 创建四个Tab页面
     m_mainTab = new QWidget();
@@ -372,6 +395,10 @@ void MainWindow::setupThirdRow()
     
     // 设置Parameters为默认选中（参照图片中的蓝色高亮）
     m_bottomTabWidget->setCurrentIndex(3);
+    
+    // 设置TabBar的文字显示模式，确保文字不被截断
+    m_bottomTabWidget->tabBar()->setElideMode(Qt::ElideNone);
+    m_bottomTabWidget->tabBar()->setUsesScrollButtons(false);
     
     // 添加到第三行布局
     thirdRowLayout->addWidget(m_connectionStatusFrame);
@@ -465,6 +492,127 @@ void MainWindow::setupTabContents()
     m_parametersTabLayout->addLayout(m_parametersButtonLayout);
 }
 
+void MainWindow::setupStackMenuContents()
+{
+    // 创建Main页面
+    m_stackMainPage = new QWidget();
+    m_stackMainLayout = new QVBoxLayout(m_stackMainPage);
+    m_stackMainLayout->setContentsMargins(10, 10, 10, 10);
+    m_stackMainLayout->setSpacing(5);
+    
+    // 添加顶部弹簧用于垂直居中
+    m_stackMainLayout->addStretch();
+    
+    // 创建Main页面的按钮
+    m_stackStartAcquisitionBtn = new QPushButton(tr("开始\n采集"), this);
+    m_stackClearAlarmsBtn = new QPushButton(tr("清除\n警报"), this);
+    m_stackAutoZeroBtn = new QPushButton(tr("自动\n清零"), this);
+    m_stackAutoCalibrateBtn = new QPushButton(tr("自动\n校准"), this);
+    m_stackClearPhaseWindowBtn = new QPushButton(tr("清除相位\n窗口"), this);
+    m_stackMoreMainBtn = new QPushButton(tr("更多..."), this);
+    
+    // 设置按钮样式
+    QList<QPushButton*> mainStackBtns = {m_stackStartAcquisitionBtn, m_stackClearAlarmsBtn, 
+                                        m_stackAutoZeroBtn, m_stackAutoCalibrateBtn, 
+                                        m_stackClearPhaseWindowBtn, m_stackMoreMainBtn};
+    for (QPushButton* btn : mainStackBtns) {
+        btn->setFixedHeight(80);
+        btn->setStyleSheet("QPushButton { background-color: #0e639c; color: white; border: 1px solid #3c3c3c; "
+                          "padding: 5px; border-radius: 3px; font-weight: bold; font-size: 20px; }");
+        m_stackMainLayout->addWidget(btn);
+    }
+    
+    // 添加底部弹簧用于垂直居中
+    m_stackMainLayout->addStretch();
+    
+    // 创建File页面
+    m_stackFilePage = new QWidget();
+    m_stackFileLayout = new QVBoxLayout(m_stackFilePage);
+    m_stackFileLayout->setContentsMargins(5, 5, 5, 5);
+    m_stackFileLayout->setSpacing(5);
+    
+    m_stackFileLayout->addStretch();
+    
+    m_stackLoadDataBtn = new QPushButton(tr("加载\n数据"), this);
+    m_stackSaveDataBtn = new QPushButton(tr("保存\n数据"), this);
+    m_stackLoadConfigBtn = new QPushButton(tr("加载\n配置"), this);
+    m_stackSaveDefaultConfigBtn = new QPushButton(tr("保存默认\n配置"), this);
+    m_stackMoreFileBtn = new QPushButton(tr("更多..."), this);
+    
+    QList<QPushButton*> fileStackBtns = {m_stackLoadDataBtn, m_stackSaveDataBtn, 
+                                        m_stackLoadConfigBtn, m_stackSaveDefaultConfigBtn, 
+                                        m_stackMoreFileBtn};
+    for (QPushButton* btn : fileStackBtns) {
+        btn->setFixedHeight(80);
+        btn->setStyleSheet("QPushButton { background-color: #0e639c; color: white; border: 1px solid #3c3c3c; "
+                          "padding: 5px; border-radius: 3px; font-weight: bold; font-size: 20px; }");
+        m_stackFileLayout->addWidget(btn);
+    }
+    
+    m_stackFileLayout->addStretch();
+    
+    // 创建Scanners页面
+    m_stackScannersPage = new QWidget();
+    m_stackScannersLayout = new QVBoxLayout(m_stackScannersPage);
+    m_stackScannersLayout->setContentsMargins(5, 5, 5, 5);
+    m_stackScannersLayout->setSpacing(5);
+    
+    m_stackScannersLayout->addStretch();
+    
+    m_stackConnectDisconnectBtn = new QPushButton(tr("连接/\n断开"), this);
+    m_stackShowRealtimePositionBtn = new QPushButton(tr("实时位置\n显示"), this);
+    
+    // 暂时禁用扫查功能
+    m_stackConnectDisconnectBtn->setEnabled(false);
+    m_stackShowRealtimePositionBtn->setEnabled(false);
+    
+    QList<QPushButton*> scannersStackBtns = {m_stackConnectDisconnectBtn, m_stackShowRealtimePositionBtn};
+    for (QPushButton* btn : scannersStackBtns) {
+        btn->setFixedHeight(80);
+        btn->setStyleSheet("QPushButton { background-color: #0e639c; color: white; border: 1px solid #3c3c3c; "
+                          "padding: 5px; border-radius: 3px; font-weight: bold; font-size: 20px; }");
+        m_stackScannersLayout->addWidget(btn);
+    }
+    
+    m_stackScannersLayout->addStretch();
+    
+    // 创建Parameters页面
+    m_stackParametersPage = new QWidget();
+    m_stackParametersLayout = new QVBoxLayout(m_stackParametersPage);
+    m_stackParametersLayout->setContentsMargins(5, 5, 5, 5);
+    m_stackParametersLayout->setSpacing(5);
+    
+    m_stackParametersLayout->addStretch();
+    
+    m_stackSetExcitationFreqBtn = new QPushButton(tr("Driving\nFrequency"), this);
+    m_stackSetSampleRateBtn = new QPushButton(tr("Acquisition\nFrequency"), this);
+    m_stackSetPreGainBtn = new QPushButton(tr("Pre Gain"), this);
+    m_stackSetPostGainBtn = new QPushButton(tr("Post Gain"), this);
+    m_stackSetRotationAngleBtn = new QPushButton(tr("Rotation\nAngle"), this);
+    m_stackMoreParametersBtn = new QPushButton(tr("More..."), this);
+    
+    QList<QPushButton*> parametersStackBtns = {m_stackSetExcitationFreqBtn, m_stackSetSampleRateBtn, 
+                                              m_stackSetPreGainBtn, m_stackSetPostGainBtn, 
+                                              m_stackSetRotationAngleBtn, m_stackMoreParametersBtn};
+    for (QPushButton* btn : parametersStackBtns) {
+        btn->setFixedHeight(80);
+        btn->setStyleSheet("QPushButton { background-color: #3a3a3a; color: white; border: 1px solid #5a5a5a; "
+                          "padding: 5px; border-radius: 3px; font-weight: bold; font-size: 20px; }");
+        m_stackParametersLayout->addWidget(btn);
+    }
+    
+    m_stackParametersLayout->addStretch();
+    
+    // 将四个页面添加到StackedWidget
+    stack_menu->addWidget(m_stackMainPage);      // 索引0 - Main
+    stack_menu->addWidget(m_stackFilePage);      // 索引1 - File
+    stack_menu->addWidget(m_stackScannersPage);  // 索引2 - Scanners
+    stack_menu->addWidget(m_stackParametersPage); // 索引3 - Parameters
+    
+    // 设置默认显示Parameters页面（与底部Tab保持一致）
+    stack_menu->setCurrentIndex(3);
+}
+
 void MainWindow::setupConnections()
 {
     // 虚拟按键连接
@@ -482,8 +630,8 @@ void MainWindow::setupConnections()
 void MainWindow::initializePlots()
 {
     // 初始化绘图区1 - 阻抗平面图（丽萨如图）
-    m_plot1->xAxis->setLabel(tr("Real"));
-    m_plot1->yAxis->setLabel(tr("Imaginary"));
+    // m_plot1->xAxis->setLabel(tr("Real"));
+    // m_plot1->yAxis->setLabel(tr("Imaginary"));
     m_plot1->xAxis->setRange(-2000, 2000);
     m_plot1->yAxis->setRange(-2000, 2000);
     m_plot1->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
@@ -492,9 +640,12 @@ void MainWindow::initializePlots()
     m_plot1->graph(0)->setScatterStyle(QCPScatterStyle::ssCircle);
     m_plot1->graph(0)->setPen(QPen(Qt::green));
     
-    // 添加网格
+    // 隐藏网格，只保留零线
     m_plot1->xAxis->grid()->setVisible(true);
     m_plot1->yAxis->grid()->setVisible(true);
+    // 设置零线为更明显的十字架
+    m_plot1->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    m_plot1->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
     m_plot1->setBackground(QBrush(QColor("#1e1e1e")));
     m_plot1->xAxis->setBasePen(QPen(QColor("#cccccc")));
     m_plot1->yAxis->setBasePen(QPen(QColor("#cccccc")));
@@ -504,16 +655,31 @@ void MainWindow::initializePlots()
     m_plot1->yAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot1->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot1->yAxis->setLabelColor(QColor("#cccccc"));
+    
+    // 隐藏子刻度线
+    m_plot1->xAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot1->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot1->xAxis->setSubTickLengthIn(0);
+    m_plot1->xAxis->setSubTickLengthOut(0);
+    m_plot1->yAxis->setSubTickLengthIn(0);
+    m_plot1->yAxis->setSubTickLengthOut(0);
 
     // 初始化绘图区2 - A扫时序图
-    m_plot2->xAxis->setLabel(tr("Time"));
-    m_plot2->yAxis->setLabel(tr("Amplitude"));
-    m_plot2->xAxis->setRange(0, 1000);
+    // m_plot2->xAxis->setLabel(tr("Time"));
+    // m_plot2->yAxis->setLabel(tr("Amplitude"));
+    m_plot2->xAxis->setRange(-500, 500);
     m_plot2->yAxis->setRange(-1, 1);
     m_plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot2->axisRect()->setupFullAxesBox(true);
     m_plot2->addGraph();
     m_plot2->graph(0)->setPen(QPen(Qt::red));
+    
+    // 隐藏网格，只保留零线
+    m_plot2->xAxis->grid()->setVisible(true);
+    m_plot2->yAxis->grid()->setVisible(true);
+    // 设置零线为更明显的十字架
+    m_plot2->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    m_plot2->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
     m_plot2->setBackground(QBrush(QColor("#1e1e1e")));
     m_plot2->xAxis->setBasePen(QPen(QColor("#cccccc")));
     m_plot2->yAxis->setBasePen(QPen(QColor("#cccccc")));
@@ -523,16 +689,36 @@ void MainWindow::initializePlots()
     m_plot2->yAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot2->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot2->yAxis->setLabelColor(QColor("#cccccc"));
+    
+    // 隐藏子刻度线
+    m_plot2->xAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->xAxis->setSubTickLengthIn(0);
+    m_plot2->xAxis->setSubTickLengthOut(0);
+    m_plot2->yAxis->setSubTickLengthIn(0);
+    m_plot2->yAxis->setSubTickLengthOut(0);
 
     // 初始化绘图区3 - 预留给后期功能
-    m_plot3->xAxis->setLabel(tr("X"));
-    m_plot3->yAxis->setLabel(tr("Y"));
-    m_plot3->xAxis->setRange(0, 100);
-    m_plot3->yAxis->setRange(0, 100);
+    // m_plot3->xAxis->setLabel(tr("X"));
+    // m_plot3->yAxis->setLabel(tr("Y"));
+    m_plot3->xAxis->setRange(-50, 50);
+    m_plot3->yAxis->setRange(-50, 50);
     m_plot3->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot3->axisRect()->setupFullAxesBox(true);
+
     m_plot3->addGraph();
     m_plot3->graph(0)->setPen(QPen(Qt::blue));
+    
+    // 隐藏网格，只保留零线
+    m_plot3->xAxis->grid()->setVisible(true);
+    m_plot3->yAxis->grid()->setVisible(true);
+    m_plot3->xAxis->setTicks(false);
+    m_plot3->yAxis->setTicks(false);
+    // m_plot3->xAxis->setVisible(false);
+    m_plot3->yAxis->setVisible(false);
+    // 设置零线为更明显的十字架
+    // m_plot3->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    // m_plot3->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
     m_plot3->setBackground(QBrush(QColor("#1e1e1e")));
     m_plot3->xAxis->setBasePen(QPen(QColor("#cccccc")));
     m_plot3->yAxis->setBasePen(QPen(QColor("#cccccc")));
@@ -542,6 +728,14 @@ void MainWindow::initializePlots()
     m_plot3->yAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot3->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot3->yAxis->setLabelColor(QColor("#cccccc"));
+    
+    // 隐藏子刻度线
+    m_plot3->xAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot3->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot3->xAxis->setSubTickLengthIn(0);
+    m_plot3->xAxis->setSubTickLengthOut(0);
+    m_plot3->yAxis->setSubTickLengthIn(0);
+    m_plot3->yAxis->setSubTickLengthOut(0);
 }
 
 QString MainWindow::getLocalIPv4Address() const
@@ -566,7 +760,7 @@ void MainWindow::updateParameterDisplay()
 {
     // 更新连接状态中的IP信息
     const QString ip = getLocalIPv4Address();
-    m_connectionStatusLabel->setText(tr("本机IP: %1 | SSEC Board usb not connected").arg(ip));
+    m_connectionStatusLabel->setText(tr("本机IP: %1 ").arg(ip));
 }
 
 // 虚拟按键槽函数实现
@@ -602,7 +796,11 @@ void MainWindow::onCancelClicked()
 
 void MainWindow::onTabChanged(int index)
 {
-    // 处理Tab切换逻辑
+    // 处理Tab切换逻辑，同步切换stack_menu的页面
+    if (stack_menu) {
+        stack_menu->setCurrentIndex(index);
+    }
+    
     switch (index) {
         case 0: // Main
             break;

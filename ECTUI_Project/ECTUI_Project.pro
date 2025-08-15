@@ -15,6 +15,7 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
+    mainwindow.cpp \
     qcustomplot.cpp
 
 HEADERS += \

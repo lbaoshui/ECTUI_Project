@@ -120,13 +120,15 @@ void MainWindow::setupFirstRow()
     firstRowFrame->setFixedHeight(250);
     
     QHBoxLayout *firstRowLayout = new QHBoxLayout(firstRowFrame);
-    firstRowLayout->setSpacing(0);
+    firstRowLayout->setSpacing(0);      // 参数区和模式信息区之间的间距
+    firstRowLayout->setContentsMargins(1, 1, 1, 1);  // 第一行内部边距
     
     // 参数详情显示区域
     m_parameterDisplayFrame = new QFrame(this);
     m_parameterDisplayFrame->setFrameStyle(QFrame::Box);
     m_parameterDisplayLayout = new QGridLayout(m_parameterDisplayFrame);
-    m_parameterDisplayLayout->setSpacing(2);
+    m_parameterDisplayLayout->setSpacing(1);           // 参数标签之间的间距
+    m_parameterDisplayLayout->setContentsMargins(1, 1, 1, 1);  // 参数区内部边距
     
     // 创建参数显示标签 - 参照ECT_UI.png的布局
     m_drivingFreqLabel = new QLabel(tr("Driving Freq: 1.000kHz"), this);
@@ -177,10 +179,10 @@ void MainWindow::setupFirstRow()
     // 模式信息显示区域
     m_modeInfoFrame = new QFrame(this);
     m_modeInfoFrame->setFrameStyle(QFrame::Box);
-    m_modeInfoFrame->setFixedWidth(180);
+    m_modeInfoFrame->setFixedWidth(200);
     m_modeInfoLayout = new QVBoxLayout(m_modeInfoFrame);
     
-    m_modeInfoLabel = new QLabel(tr("模式信息\n(如:\nReflection\nMode)"), this);
+    m_modeInfoLabel = new QLabel(tr("Reflection\nMode)"), this);
     m_modeInfoLabel->setAlignment(Qt::AlignCenter);
     QFont modeFont;
     modeFont.setPointSize(10);
@@ -201,9 +203,17 @@ void MainWindow::setupSecondRow()
     // 第二行：四个绘图/控制区域
     m_middleFrame = new QFrame(this);
     m_middleFrame->setFrameStyle(QFrame::Box);
-    m_middleLayout_border = new QVBoxLayout(m_middleFrame);
-    m_middleLayout = new QGridLayout();
-    m_middleLayout->setSpacing(1);
+    m_middleFrame->setContentsMargins(QMargins(1,1,1,1));
+
+    m_middleFrame_border = new QFrame(this);
+    // m_middleLayout_border = new QVBoxLayout(m_middleFrame_border);
+    m_middleLayout_border = new QHBoxLayout(m_middleFrame);
+
+    m_plotArea_frame1 = new QFrame();
+
+    m_middleLayout = new QGridLayout(m_plotArea_frame1);
+    m_middleLayout->setSpacing(1);      // 绘图区域之间的间距
+    m_middleLayout->setContentsMargins(1, 1, 1, 1);  // 中间区域内部边距
 
     // 绘图区1（左上）
     m_plotArea1 = new QFrame(this);
@@ -233,6 +243,7 @@ void MainWindow::setupSecondRow()
     // 控制按键区域（右下）
     m_controlFrame = new QFrame(this);
     m_controlFrame->setFrameStyle(QFrame::Box);
+    m_controlFrame->setFixedWidth(200);
     m_controlLayout = new QVBoxLayout(m_controlFrame);
 
     // 确认和取消按钮
@@ -242,10 +253,10 @@ void MainWindow::setupSecondRow()
     m_confirmBtn = new QPushButton(tr("✓"), this);
     m_cancelBtn = new QPushButton(tr("✗"), this);
     
-    m_confirmBtn->setFixedSize(80, 80);
-    m_cancelBtn->setFixedSize(80, 80);
-    m_confirmBtn->setStyleSheet("QPushButton { font-size: 20px; background-color: #16825d; color: white; border: 1px solid #3c3c3c; border-radius: 5px; } QPushButton:hover { background-color: #1e9b6a; }");
-    m_cancelBtn->setStyleSheet("QPushButton { font-size: 20px; background-color: #d73a49; color: white; border: 1px solid #3c3c3c; border-radius: 5px; } QPushButton:hover { background-color: #e55566; }");
+    m_confirmBtn->setFixedSize(60, 60);
+    m_cancelBtn->setFixedSize(60, 60);
+    m_confirmBtn->setStyleSheet("QPushButton { font-size: 50px; background-color: #16825d; color: white; border: 1px solid #3c3c3c; border-radius: 5px; } QPushButton:hover { background-color: #1e9b6a; }");
+    m_cancelBtn->setStyleSheet("QPushButton { font-size: 50px; background-color: #d73a49; color: white; border: 1px solid #3c3c3c; border-radius: 5px; } QPushButton:hover { background-color: #e55566; }");
     
     m_confirmCancelLayout->addWidget(m_confirmBtn);
     m_confirmCancelLayout->addWidget(m_cancelBtn);
@@ -264,8 +275,8 @@ void MainWindow::setupSecondRow()
     // 设置按钮样式
     QList<QPushButton*> virtualBtns = {m_upBtn, m_downBtn, m_leftBtn, m_rightBtn};
     for (QPushButton* btn : virtualBtns) {
-        btn->setFixedSize(80, 80);
-        btn->setStyleSheet("QPushButton { font-size: 70px; font-weight: bold; }");
+        btn->setFixedSize(60, 60);
+        btn->setStyleSheet("QPushButton { font-size: 50px; font-weight: bold; }");
     }
     
     // 布局虚拟按键，形成十字形状
@@ -283,15 +294,30 @@ void MainWindow::setupSecondRow()
     m_middleLayout->setRowStretch(0, 3); // 上排占3倍高度
     m_middleLayout->setColumnStretch(0, 4); // 左列占4倍宽度
     m_middleLayout->setColumnStretch(1, 4); // 中列占4倍宽度
-    m_middleLayout->setColumnStretch(2, 1); // 右列占1倍宽度
+    // m_middleLayout->setColumnStretch(2, 1); // 右列占1倍宽度
 
     // 添加四个区域到网格布局
     m_middleLayout->addWidget(m_plotArea1, 0, 0);
     m_middleLayout->addWidget(m_plotArea2Frame, 0, 1);
-    m_middleLayout->addWidget(m_controlFrame, 0, 2);
+    // m_middleLayout->addWidget(m_controlFrame, 0, 2);
 
-    m_middleLayout_border->addLayout(m_middleLayout);
-    m_middleLayout_border->addWidget(m_plotArea3);
+
+
+    // 绘图区
+    m_plotArea_frame = new QFrame();
+    m_middleLayout_1 = new QVBoxLayout(m_plotArea_frame); //
+
+    stack_menu_frame= new QFrame();
+    stack_menu_frame->setFixedWidth(150);
+    stack_menu = new QStackedWidget(stack_menu_frame);
+    stack_menu->setFixedWidth(150);
+
+    m_middleLayout_1->addWidget(m_plotArea_frame1);  // 绘图区1和2
+    m_middleLayout_1->addWidget(m_plotArea3);        // 绘图区3
+
+    m_middleLayout_border->addWidget(m_plotArea_frame);
+    m_middleLayout_border->addWidget(stack_menu_frame);
+    m_middleLayout_border->addWidget(m_controlFrame);
     m_plotArea3->setFixedHeight(200);
     
     m_mainLayout->addWidget(m_middleFrame);
@@ -304,8 +330,8 @@ void MainWindow::setupThirdRow()
     thirdRowFrame->setFrameStyle(QFrame::Box);
     
     QVBoxLayout *thirdRowLayout = new QVBoxLayout(thirdRowFrame);
-    thirdRowLayout->setSpacing(2);
-    thirdRowLayout->setMargin(0);
+    thirdRowLayout->setSpacing(5);      // 连接状态和Tab之间的间距
+    thirdRowLayout->setContentsMargins(5, 5, 5, 5);  // 第三行内部边距
     
     // 设备连接状态显示
     m_connectionStatusFrame = new QFrame(this);
@@ -321,7 +347,10 @@ void MainWindow::setupThirdRow()
     m_connectionStatusLabel2 = new QLabel(tr("SSEC Board usb not connected"), this);
     m_connectionStatusLabel2->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 16px; border-radius: 3px; }");
     m_connectionStatusLayout->addWidget(m_connectionStatusLabel2);
-    m_connectionStatusLayout->setMargin(2);
+    
+    // 设置连接状态布局间距
+    m_connectionStatusLayout->setSpacing(8);        // 标签之间间距
+    m_connectionStatusLayout->setContentsMargins(8, 5, 8, 5);  // 连接状态区内部边距
 
     m_connectionStatusLayout->addStretch(2);
 

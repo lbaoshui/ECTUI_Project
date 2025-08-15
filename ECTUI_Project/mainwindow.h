@@ -23,6 +23,7 @@
 #include <QMessageBox>
 #include <QNetworkInterface>
 #include <QTabWidget>
+#include <QStackedWidget>
 #include "qcustomplot.h"
 
 QT_BEGIN_NAMESPACE
@@ -77,7 +78,16 @@ private:
     // 中间四个区域的主框架
     QFrame *m_middleFrame;
     QGridLayout *m_middleLayout;
-    QVBoxLayout *m_middleLayout_border;
+    QFrame *m_middleFrame_border;
+    QHBoxLayout *m_middleLayout_border;
+    QVBoxLayout *m_middleLayout_1;
+
+    // 子菜单区域
+    QFrame* stack_menu_frame = nullptr;
+    QStackedWidget* stack_menu = nullptr;
+
+    QFrame *m_plotArea_frame;
+    QFrame *m_plotArea_frame1;
 
     // 绘图区1（左上）
     QFrame *m_plotArea1;

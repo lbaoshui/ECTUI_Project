@@ -129,6 +129,7 @@ private:
     QFrame *m_plotArea1;
     QVBoxLayout *m_plotArea1Layout;
     QCustomPlot *m_plot1;
+    QCPCurve *m_circleCurve; // 圆形曲线
 
     // 绘图区2（右上）+ 模式信息
     QFrame *m_plotArea2Frame;
@@ -220,5 +221,6 @@ private:
     // 工具函数
     QString getLocalIPv4Address() const;
     void updateParameterDisplay();
+    void updateCircleCurve(); // 更新圆形曲线
 };
 #endif // MAINWINDOW_H

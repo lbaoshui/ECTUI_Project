@@ -374,3 +374,63 @@ void DataStorageWorker::processBatch()
 3. **数据竞争问题**：优化了ChannelManager::distributePacket中的锁策略，避免了可能的死锁和数据竞争
 4. **资源释放问题**：确保DataStorageWorker中的文件资源在关闭时正确释放
 5. **内存管理问题**：增强了MemoryPool的线程安全性，改进了数据包的分配和释放机制
+
+# 额外修改的内容：
+
+1. qmap.h的792行左右的内容：（作用：主要是为了修复Qt6.8对于MSVC编译器对于QMap的编译错误）
+
+```C++
+private:
+#ifdef Q_QDOC
+    friend size_t qHash(const QMap &key, size_t seed = 0);
+#else
+ # if defined(Q_CC_GHS) || defined (Q_CC_MSVC)
+    // GHS and MSVC tries to intantiate qHash() for the noexcept running into a
+    // non-SFINAE'ed hard error... Create an artificial SFINAE context as a
+    // work-around:
+     template <typename M, std::enable_if_t<std::is_same_v<M, QMap>, bool> = true>
+     friend QtPrivate::QHashMultiReturnType<typename M::key_type, typename M::mapped_type>
+ # else
+    using M = QMap;
+    friend size_t
+
+ # endif
+    qHash(const M &key, size_t seed = 0)
+        noexcept(QHashPrivate::noexceptPairHash<typename M::key_type, typename M::mapped_type>())
+
+    {
+        if (!key.d)
+            return seed;
+        // don't use qHashRange to avoid its compile-time overhead:
+        return std::accumulate(key.d->m.begin(), key.d->m.end(), seed,
+                               QtPrivate::QHashCombine{});
+    }
+```
+
+```C++
+private:
+#ifdef Q_QDOC
+    friend size_t qHash(const QMap &key, size_t seed = 0);
+#else
+// # if defined(Q_CC_GHS) || defined (Q_CC_MSVC)
+    // GHS and MSVC tries to intantiate qHash() for the noexcept running into a
+    // non-SFINAE'ed hard error... Create an artificial SFINAE context as a
+    // work-around:
+    // template <typename M, std::enable_if_t<std::is_same_v<M, QMap>, bool> = true>
+    // friend QtPrivate::QHashMultiReturnType<typename M::key_type, typename M::mapped_type>
+// # else
+    using M = QMap;
+    friend size_t
+
+// # endif
+    qHash(const M &key, size_t seed = 0)
+        noexcept(QHashPrivate::noexceptPairHash<typename M::key_type, typename M::mapped_type>())
+
+    {
+        if (!key.d)
+            return seed;
+        // don't use qHashRange to avoid its compile-time overhead:
+        return std::accumulate(key.d->m.begin(), key.d->m.end(), seed,
+                               QtPrivate::QHashCombine{});
+    }
+```

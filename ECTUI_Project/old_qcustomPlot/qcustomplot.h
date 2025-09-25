@@ -23,6 +23,15 @@
 **          Version: 2.1.1                                                **
 ****************************************************************************/
 
+/*****************************************************
+ * 自己添加的内容：
+ * 2022年12月8日：
+ *  1.5500行添加了一自定义函数：
+ *    声明：void removeDataBefore(int x);
+ *    作用：用于移除图像 key x 之前的数据
+******************************************************/
+
+
 #ifndef QCUSTOMPLOT_H
 #define QCUSTOMPLOT_H
 
@@ -5520,6 +5529,19 @@ public:
   explicit QCPGraph(QCPAxis *keyAxis, QCPAxis *valueAxis);
   virtual ~QCPGraph() Q_DECL_OVERRIDE;
   
+  /*
+   * 这里的索引为自定义函数功能
+   */
+  // 为QGraph添加索引值
+  int index = 0;
+  inline void setIndex(int m_index) {
+      index = m_index;
+  }
+  // 获取QGraph的索引值
+  inline int getIndex() {
+      return index;
+  }
+
   // getters:
   QSharedPointer<QCPGraphDataContainer> data() const { return mDataContainer; }
   LineStyle lineStyle() const { return mLineStyle; }
@@ -5540,7 +5562,8 @@ public:
   // non-property methods:
   void addData(const QVector<double> &keys, const QVector<double> &values, bool alreadySorted=false);
   void addData(double key, double value);
-  
+  void removeDataBefore(int x);
+
   // reimplemented virtual methods:
   virtual double selectTest(const QPointF &pos, bool onlySelectable, QVariant *details=nullptr) const Q_DECL_OVERRIDE;
   virtual QCPRange getKeyRange(bool &foundRange, QCP::SignDomain inSignDomain=QCP::sdBoth) const Q_DECL_OVERRIDE;

@@ -23,8 +23,28 @@
 **          Version: 2.1.1                                                **
 ****************************************************************************/
 
-#include "qcustomplot.h"
+/**************************************************************************
+ * 自定义添加内容：
+ *  2022.12.07
+ *  1. 924行添加了几行代码，用于开启OpenGL不报错
+ *
+ *  2022.12.08
+ *  1. 175888行（大致范围）更改了QCPGraph的最小边框设置：setMinimumMargins(QMargins(0, 0, 0, 0));
+ *
+ *  2023.07.05
+ *  1. qcustomplot.cpp 15608、15612行进行更改：添加了
 
+    `event->button() == Qt::LeftButton 和`
+
+    `if event->button() != Qt::LeftButton`
+
+    18572行将 `if (event->buttons() & Qt::LeftButton)`更改为
+
+    `if (event->buttons() & Qt::RightButton)`
+ ***************************************************************************/
+
+#include "qcustomplot.h"
+// #include <freeglut340/include/GL/freeglut.h>
 
 /* including file 'src/vector2d.cpp'       */
 /* modified 2022-11-06T12:45:56, size 7973 */
@@ -908,6 +928,12 @@ void QCPPaintBufferGlFbo::draw(QCPPainter *painter) const
     qDebug() << Q_FUNC_INFO << "OpenGL frame buffer object doesn't exist, reallocateBuffer was not called?";
     return;
   }
+  
+  //<Added by june 2022.12.08
+  if (QOpenGLContext::currentContext() != mGlContext.data()) {
+          mGlContext.data()->makeCurrent(mGlContext.data()->surface());
+  }
+  
   painter->drawImage(0, 0, mGlFrameBuffer->toImage());
 }
 
@@ -15580,11 +15606,11 @@ void QCustomPlot::mousePressEvent(QMouseEvent *event)
   mMouseHasMoved = false;
   mMousePressPos = event->pos();
   
-  if (mSelectionRect && mSelectionRectMode != QCP::srmNone)
+  if (event->button() == Qt::LeftButton && mSelectionRect && mSelectionRectMode != QCP::srmNone)
   {
     if (mSelectionRectMode != QCP::srmZoom || qobject_cast<QCPAxisRect*>(axisRectAt(mMousePressPos))) // in zoom mode only activate selection rect if on an axis rect
       mSelectionRect->startSelection(event);
-  } else
+  } else if (event->button() != Qt::LeftButton)    //
   {
     // no selection rect interaction, prepare for click signal emission and forward event to layerable under the cursor:
     QList<QVariant> details;
@@ -17569,7 +17595,8 @@ QCPAxisRect::QCPAxisRect(QCustomPlot *parentPlot, bool setupDefaultAxes) :
   mInsetLayout->setParent(this);
   
   setMinimumSize(50, 50);
-  setMinimumMargins(QMargins(15, 15, 15, 15));
+//  setMinimumMargins(QMargins(15, 15, 15, 15));
+  setMinimumMargins(QMargins(0, 0, 0, 0));         // 自定义更改最小边框，用于减小多坐标轴之间的边框
   mAxes.insert(QCPAxis::atLeft, QList<QCPAxis*>());
   mAxes.insert(QCPAxis::atRight, QList<QCPAxis*>());
   mAxes.insert(QCPAxis::atTop, QList<QCPAxis*>());
@@ -18543,7 +18570,8 @@ void QCPAxisRect::layoutChanged()
 void QCPAxisRect::mousePressEvent(QMouseEvent *event, const QVariant &details)
 {
   Q_UNUSED(details)
-  if (event->buttons() & Qt::LeftButton)
+//  if (event->buttons() & Qt::LeftButton)
+  if (event->buttons() & Qt::RightButton)
   {
     mDragging = true;
     // initialize antialiasing backup in case we start dragging:
@@ -21079,6 +21107,13 @@ void QCPGraph::addData(const QVector<double> &keys, const QVector<double> &value
 void QCPGraph::addData(double key, double value)
 {
   mDataContainer->add(QCPGraphData(key, value));
+}
+/*
+ * 用于移除sortkey x之前的数据，但并不是删除（自定义的）
+ */
+void QCPGraph::removeDataBefore(int x)
+{
+    mDataContainer->removeBefore(x);
 }
 
 /*!

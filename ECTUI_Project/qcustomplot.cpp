@@ -17569,7 +17569,8 @@ QCPAxisRect::QCPAxisRect(QCustomPlot *parentPlot, bool setupDefaultAxes) :
   mInsetLayout->setParent(this);
   
   setMinimumSize(50, 50);
-  setMinimumMargins(QMargins(15, 15, 15, 15));
+  // setMinimumMargins(QMargins(15, 15, 15, 15));
+  setMinimumMargins(QMargins(0, 0, 0, 0));
   mAxes.insert(QCPAxis::atLeft, QList<QCPAxis*>());
   mAxes.insert(QCPAxis::atRight, QList<QCPAxis*>());
   mAxes.insert(QCPAxis::atTop, QList<QCPAxis*>());

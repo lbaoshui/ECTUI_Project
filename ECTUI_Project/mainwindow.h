@@ -24,7 +24,10 @@
 #include <QNetworkInterface>
 #include <QTabWidget>
 #include <QStackedWidget>
+#include <QDebug>
+#include <QObject>
 #include "qcustomplot.h"
+#include "customplot.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -128,7 +131,8 @@ private:
     // 绘图区1（左上）
     QFrame *m_plotArea1;
     QVBoxLayout *m_plotArea1Layout;
-    QCustomPlot *m_plot1;
+    // QCustomPlot *m_plot1;
+    customplot *m_plot1;
     QCPCurve *m_circleCurve; // 圆形曲线
 
     // 绘图区2（右上）+ 模式信息
@@ -138,6 +142,10 @@ private:
     QFrame *m_modeInfoFrame;
     QVBoxLayout *m_modeInfoLayout;
     QLabel *m_modeInfoLabel;
+
+    QFrame *m_modeInfoFrame2;
+    QVBoxLayout *m_modeInfoLayout2;
+    QLabel *m_modeInfoLabel2;
 
     // 绘图区3（左下）
     QFrame *m_plotArea3;
@@ -222,5 +230,17 @@ private:
     QString getLocalIPv4Address() const;
     void updateParameterDisplay();
     void updateCircleCurve(); // 更新圆形曲线
+
+    void updateplot1_zerotickerLine(QCustomPlot* plot);
+    void updateplot1_zerotickerLine_0();
+
+    void updateplot2_Double_axis_line();
+
+    bool eventFilter(QObject *obj, QEvent *event);
+
+signals:
+    void plotsize_changed();
+    void plot2size_changed();
+
 };
 #endif // MAINWINDOW_H

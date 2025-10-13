@@ -128,6 +128,7 @@ void MainWindow::setupUI()
 
     // 初始化图表和连接信号槽
     initializePlots();
+
     setupConnections();
 
     // 更新参数显示
@@ -137,7 +138,6 @@ void MainWindow::setupUI()
 
     // auto hwnd = reinterpret_cast<HWND>(winId());
     // setTitleBarColor(hwnd, RGB(67, 67, 68));   // 深灰标题栏
-
 }
 
 void MainWindow::setupFirstRow()
@@ -146,6 +146,9 @@ void MainWindow::setupFirstRow()
     QFrame *firstRowFrame = new QFrame(this);
     firstRowFrame->setFrameStyle(QFrame::Box);
     firstRowFrame->setFixedHeight(200);
+    // firstRowFrame->setStyleSheet("QFrame{"
+    //                            " border: 1px solid #eeeeee;"
+    //                            "}"); // 2 像素 实线
 
     QHBoxLayout *firstRowLayout = new QHBoxLayout(firstRowFrame);
     firstRowLayout->setSpacing(0);      // 参数区和模式信息区之间的间距
@@ -154,6 +157,9 @@ void MainWindow::setupFirstRow()
     // 参数详情显示区域
     m_parameterDisplayFrame = new QFrame(this);
     m_parameterDisplayFrame->setFrameStyle(QFrame::Box);
+    m_parameterDisplayFrame->setStyleSheet("QFrame{"
+                               " border: 1px solid #eeeeee;"
+                               "}"); // 2 像素 实线
     m_parameterDisplayLayout = new QGridLayout(m_parameterDisplayFrame);
     m_parameterDisplayLayout->setSpacing(1);           // 参数标签之间的间距
     m_parameterDisplayLayout->setContentsMargins(1, 1, 1, 1);  // 参数区内部边距
@@ -209,10 +215,11 @@ void MainWindow::setupFirstRow()
     // 模式信息显示区域
     m_modeInfoFrame = new QFrame(this);
     m_modeInfoFrame->setFrameStyle(QFrame::Box);
-    m_modeInfoFrame->setFixedWidth(460);
+    m_modeInfoFrame->setFixedWidth(300);
     m_modeInfoLayout = new QVBoxLayout(m_modeInfoFrame);
 
-    m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
+    // m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
+    m_modeInfoLabel = new QLabel(this);
     m_modeInfoLabel->setAlignment(Qt::AlignCenter);
     QFont modeFont;
     modeFont.setPointSize(10);
@@ -248,24 +255,49 @@ void MainWindow::setupSecondRow()
     // 绘图区1（左上）
     m_plotArea1 = new QFrame(this);
     m_plotArea1->setFrameStyle(QFrame::Box);
+    m_plotArea1->setStyleSheet("QFrame{"
+                               " border-left: 1px solid #eeeeee;"
+                               " border-bottom: 1px solid #eeeeee;"
+                               "}"); // 2 像素 红色实线
     m_plotArea1Layout = new QVBoxLayout(m_plotArea1);
-    m_plot1 = new QCustomPlot(this);
-    m_plot1->setMinimumSize(400, 250);
+    m_plotArea1Layout->setContentsMargins(0, 0, 0, 0);
+    m_plotArea1Layout->setSpacing(0);
+    // m_plot1 = new QCustomPlot(this);
+    m_plot1 = new customplot(this);
+    m_plot1->setMinimumSize(400, 400);
+    m_plot1->setInteraction(QCP::iRangeZoom, false);
+    m_plot1->xAxis2->setVisible(false);
+    m_plot1->yAxis2->setVisible(false);
     m_plotArea1Layout->addWidget(m_plot1);
 
     // 绘图区2（右上）
     m_plotArea2Frame = new QFrame(this);
     m_plotArea2Frame->setFrameStyle(QFrame::Box);
+    m_plotArea2Frame->setStyleSheet("QFrame{"
+                               " border-left: 1px solid #eeeeee;"
+                               " border-bottom: 1px solid #eeeeee;"
+                               " border-right: 1px solid #eeeeee;"
+                               "}"); // 2 像素 红色实线
     m_plotArea2Layout = new QVBoxLayout(m_plotArea2Frame);
+    m_plotArea2Layout->setContentsMargins(0, 0, 0, 0);
+    m_plotArea2Layout->setSpacing(0);
 
     m_plot2 = new QCustomPlot(this);
-    m_plot2->setMinimumSize(400, 250);
+    m_plot2->setMinimumSize(400, 400);
+    m_plot2->setInteraction(QCP::iRangeZoom, false);
+    // m_plot2->yAxis->setVisible(false);
     m_plotArea2Layout->addWidget(m_plot2);
 
     // 绘图区3（左下）
     m_plotArea3 = new QFrame(this);
     m_plotArea3->setFrameStyle(QFrame::Box);
+    m_plotArea3->setStyleSheet("QFrame{"
+                               " border: 1px solid #eeeeee;"
+                               // " border-bottom: 1px solid #eeeeee;"
+                               "}"); // 2 像素 红色实线
     m_plotArea3Layout = new QVBoxLayout(m_plotArea3);
+    m_plotArea3Layout->setContentsMargins(0, 0, 0, 0);
+    m_plotArea3Layout->setSpacing(0);
     m_plot3 = new QCustomPlot(this);
     m_plot3->setMinimumSize(400, 150);
     m_plotArea3Layout->addWidget(m_plot3);
@@ -290,6 +322,7 @@ void MainWindow::setupSecondRow()
 
     m_confirmCancelLayout->addWidget(m_confirmBtn);
     m_confirmCancelLayout->addWidget(m_cancelBtn);
+    m_confirmCancelLayout->setSpacing(100);
     m_confirmCancelLayout->addStretch();
 
     // 虚拟方向按键
@@ -319,6 +352,7 @@ void MainWindow::setupSecondRow()
     m_controlLayout->addStretch();
     m_controlLayout->addWidget(m_confirmCancelFrame);
     m_controlLayout->addWidget(m_virtualButtonFrame);
+    m_controlLayout->setSpacing(200);
     m_controlLayout->addStretch();
     // m_controlLayout->addStretch(1);
 
@@ -331,6 +365,7 @@ void MainWindow::setupSecondRow()
     // 添加四个区域到网格布局
     m_middleLayout->addWidget(m_plotArea1, 0, 0);
     m_middleLayout->addWidget(m_plotArea2Frame, 0, 1);
+    m_middleLayout->setSpacing(5);
     // m_middleLayout->addWidget(m_controlFrame, 0, 2);
 
 
@@ -340,7 +375,7 @@ void MainWindow::setupSecondRow()
     m_middleLayout_1 = new QVBoxLayout(m_plotArea_frame); //
 
     stack_menu_frame = new QFrame();
-    stack_menu_frame->setFixedWidth(200);
+    stack_menu_frame->setFixedWidth(180);
     stack_menu_frame->setFrameStyle(QFrame::Box);
 
     QVBoxLayout* stackFrameLayout = new QVBoxLayout(stack_menu_frame);
@@ -348,6 +383,25 @@ void MainWindow::setupSecondRow()
 
     stack_menu = new QStackedWidget();
     stack_menu->setFixedWidth(180);
+
+    // m_modeInfoFrame2 = new QFrame(this);
+    // m_modeInfoFrame2->setFrameStyle(QFrame::Box);
+    // m_modeInfoFrame2->setFixedHeight(250);
+    // m_modeInfoFrame2->setFixedWidth(180);
+    // m_modeInfoLayout2 = new QVBoxLayout(m_modeInfoFrame2);
+
+    // 模式信息显示
+    m_modeInfoLabel2 = new QLabel(tr("Reflection\nMode"), this);
+    m_modeInfoLabel2->setAlignment(Qt::AlignCenter);
+    m_modeInfoLabel2->setFixedWidth(178);
+    m_modeInfoLabel2->setFixedHeight(180);
+    QFont modeFont;
+    modeFont.setPointSize(10);
+    modeFont.setBold(true);
+    m_modeInfoLabel2->setFont(modeFont);
+    m_modeInfoLabel2->setStyleSheet("QLabel { color: #f14c4c; background-color: #252526; border: 1px solid #3c3c3c; padding: 10px; border-radius: 3px; font-size: 30px; text-align: center; }");
+    stackFrameLayout->addWidget(m_modeInfoLabel2);
+
     stackFrameLayout->addWidget(stack_menu);
 
     m_middleLayout_1->addWidget(m_plotArea_frame1);  // 绘图区1和2
@@ -658,12 +712,12 @@ void MainWindow::setupConnections()
 
 void MainWindow::initializePlots()
 {
-    // 初始化绘图区1 - 阻抗平面图（丽萨如图）
+    // 初始化绘图区1 - 阻抗平面图（李萨如图）
     // m_plot1->xAxis->setLabel(tr("Real"));
     // m_plot1->yAxis->setLabel(tr("Imaginary"));
-    m_plot1->xAxis->setRange(-2000, 2000);
-    m_plot1->yAxis->setRange(-2000, 2000);
-    m_plot1->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    m_plot1->xAxis->setRange(-2100, 2100);
+    m_plot1->yAxis->setRange(-2100, 2100);
+    // m_plot1->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot1->axisRect()->setupFullAxesBox(true);
     m_plot1->addGraph();
     m_plot1->graph(0)->setScatterStyle(QCPScatterStyle::ssCircle);
@@ -674,12 +728,13 @@ void MainWindow::initializePlots()
     // m_plot1->addPlottable(m_circleCurve);
     m_circleCurve->setPen(QPen(Qt::red, 2)); // 红色圆圈，线宽2
 
-    // 隐藏网格，只保留零线
+    //
     m_plot1->xAxis->grid()->setVisible(true);
     m_plot1->yAxis->grid()->setVisible(true);
-    // 设置零线为更明显的十字架
-    m_plot1->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
-    m_plot1->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    // m_plot1->xAxis->setVisible(false);
+    // m_plot1->yAxis->setVisible(false);
+    //
+
     m_plot1->setBackground(QBrush(QColor("#1e1e1e")));
     m_plot1->xAxis->setBasePen(QPen(QColor("#cccccc")));
     m_plot1->yAxis->setBasePen(QPen(QColor("#cccccc")));
@@ -689,6 +744,23 @@ void MainWindow::initializePlots()
     m_plot1->yAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot1->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot1->yAxis->setLabelColor(QColor("#cccccc"));
+    QPen pen1, pen2,pen3;
+    pen3 = m_plot1->xAxis->grid()->pen();
+    // m_plot1->xAxis->grid()->setZeroLinePen(pen3);
+    m_plot1->xAxis->grid()->setZeroLinePen(Qt::NoPen);
+    m_plot1->xAxis2->grid()->setZeroLinePen(Qt::NoPen);
+    // m_plot1->yAxis->grid()->setZeroLinePen(pen3);
+    m_plot1->yAxis->grid()->setZeroLinePen(Qt::NoPen);
+    m_plot1->yAxis2->grid()->setZeroLinePen(Qt::NoPen);
+
+    m_plot1->xAxis2->setVisible(false);
+    m_plot1->yAxis2->setVisible(false);
+    m_plot1->xAxis2->setTickLabels(false);
+    m_plot1->yAxis2->setTickLabels(false);
+    // m_plot1->xAxis2->setTickLabelColor(QColor("#cccccc"));
+    // m_plot1->xAxis2->setTickPen(QPen(QColor("#cccccc")));
+    // m_plot1->xAxis2->setSubTickPen(QPen(QColor("#cccccc")));
+    // m_plot1->xAxis2->setBasePen(QPen(QColor("#cccccc")));
 
     // 隐藏子刻度线
     m_plot1->xAxis->setSubTickPen(QPen(Qt::transparent));
@@ -698,15 +770,26 @@ void MainWindow::initializePlots()
     m_plot1->yAxis->setSubTickLengthIn(0);
     m_plot1->yAxis->setSubTickLengthOut(0);
 
+    QSharedPointer<QCPAxisTickerFixed> MyTicker0(new QCPAxisTickerFixed);
+    MyTicker0->setTickStep(500);
+    // MyTicker0->setTickCount(6);
+    m_plot1->xAxis->setTicker(MyTicker0);
+    m_plot1->yAxis->setTicker(MyTicker0);
+
+    m_plot1->axisRect()->setMargins(QMargins(0,0,0,0));
+
+
     // 初始化圆形曲线
     updateCircleCurve();
+    // 实时更新轴线的位置
+    QObject::connect(this, &MainWindow::plotsize_changed, this, &MainWindow::updateplot1_zerotickerLine_0);
+    m_plot1->installEventFilter(this);
 
+    // ---------------------------------------------------------------------------------------------------------------------------------------
     // 初始化绘图区2 - A扫时序图
-    // m_plot2->xAxis->setLabel(tr("Time"));
-    // m_plot2->yAxis->setLabel(tr("Amplitude"));
-    m_plot2->xAxis->setRange(-500, 500);
-    m_plot2->yAxis->setRange(-1, 1);
-    m_plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    m_plot2->xAxis->setRange(0, 1000);
+    m_plot2->yAxis->setRange(-500, 500);
+    // m_plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot2->axisRect()->setupFullAxesBox(true);
     m_plot2->addGraph();
     m_plot2->graph(0)->setPen(QPen(Qt::red));
@@ -714,31 +797,94 @@ void MainWindow::initializePlots()
     // 隐藏网格，只保留零线
     m_plot2->xAxis->grid()->setVisible(true);
     m_plot2->yAxis->grid()->setVisible(true);
+    m_plot2->yAxis->setTickLabels(false);
+    m_plot2->yAxis->setSubTicks(false);
+
+    m_plot2->xAxis->setTickLabels(true);
+    m_plot2->xAxis2->setTickLabels(true);
+
+    // 设置X轴位置偏移
+
+    m_plot2->xAxis2->setOffset(-200);
+    m_plot2->xAxis->setOffset(-200);
+    // 设置x轴样式
+    m_plot2->xAxis->setTickLabelColor(QColor("#cccccc"));
+    m_plot2->xAxis->setTickPen(QPen(QColor("#cc3e3e")));
+    m_plot2->xAxis->setSubTickPen(QPen(QColor("#cc3e3e")));
+    m_plot2->xAxis->setBasePen(QPen(QColor("#cc3e3e"),2));
+    m_plot2->xAxis2->setTickLabelColor(QColor("#cccccc"));
+    m_plot2->xAxis2->setTickPen(QPen(QColor("#cc3e3e")));
+    m_plot2->xAxis2->setSubTickPen(QPen(QColor("#cc3e3e")));
+    m_plot2->xAxis2->setBasePen(QPen(QColor("#cc3e3e"),2));
+
+
+
     // 设置零线为更明显的十字架
-    m_plot2->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
-    m_plot2->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    // m_plot2->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
+    // m_plot2->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
     m_plot2->setBackground(QBrush(QColor("#1e1e1e")));
-    m_plot2->xAxis->setBasePen(QPen(QColor("#cccccc")));
     m_plot2->yAxis->setBasePen(QPen(QColor("#cccccc")));
-    m_plot2->xAxis->setTickPen(QPen(QColor("#cccccc")));
     m_plot2->yAxis->setTickPen(QPen(QColor("#cccccc")));
     m_plot2->xAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot2->yAxis->setTickLabelColor(QColor("#cccccc"));
     m_plot2->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot2->yAxis->setLabelColor(QColor("#cccccc"));
+    m_plot2->yAxis->setTickLabels(false);
+    m_plot2->yAxis->setSubTicks(false);
+    m_plot2->yAxis->setBasePen(QPen(Qt::transparent));
+    m_plot2->yAxis->setTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+
+    m_plot2->yAxis2->setTickLabels(false);
+    m_plot2->yAxis2->setSubTicks(false);
+    m_plot2->yAxis2->setBasePen(QPen(Qt::transparent));
+    m_plot2->yAxis2->setTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis2->setSubTickPen(QPen(Qt::transparent));
+
+    m_plot2->xAxis->setSubTickLengthIn(2);
+    m_plot2->xAxis->setSubTickLengthOut(0);
+
+    m_plot2->axisRect()->setMargins(QMargins(0,0,0,0));
+    m_plot2->yAxis->setLabelPadding(0);
+    m_plot2->yAxis->setTickLabelPadding(0);
+
+    QObject::connect(this, &MainWindow::plot2size_changed, this, &MainWindow::updateplot2_Double_axis_line);
+    m_plot2->installEventFilter(this);
 
     // 隐藏子刻度线
-    m_plot2->xAxis->setSubTickPen(QPen(Qt::transparent));
+    // m_plot2->xAxis->setSubTickPen(QPen(Qt::transparent));
+
+/*
+    m_plot2->yAxis->setBasePen(QPen(Qt::transparent));
+    // 2. 刻度线透明
+    m_plot2->yAxis->setTickPen(QPen(Qt::transparent));
     m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
-    m_plot2->xAxis->setSubTickLengthIn(0);
-    m_plot2->xAxis->setSubTickLengthOut(0);
+    // 3. 刻度文字隐藏
+    m_plot2->yAxis->setTickLabels(false);
+    // 4. 可选：把刻度长度也清零，确保不占像素
+    m_plot2->yAxis->setTickLengthIn(0);
+    m_plot2->yAxis->setTickLengthOut(0);
     m_plot2->yAxis->setSubTickLengthIn(0);
     m_plot2->yAxis->setSubTickLengthOut(0);
 
+    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->xAxis->setSubTickLengthIn(2);
+    m_plot2->xAxis->setSubTickLengthOut(0);
+    m_plot2->yAxis->setSubTickLengthIn(0);
+    m_plot2->yAxis->setSubTickLengthOut(0);
+*/
+
+    // 设置y轴零刻度线样式
+    QPen pen4 = m_plot2->yAxis->grid()->pen();
+    m_plot2->yAxis->grid()->setZeroLinePen(pen4);
+
+    m_plot2->xAxis->setSubTicks(true);
+    m_plot2->xAxis2->setSubTicks(true);
+
+    m_plot2->axisRect()->setMargins(QMargins(0,0,0,0));
+
     // 初始化绘图区3 - 预留给后期功能
-    // m_plot3->xAxis->setLabel(tr("X"));
-    // m_plot3->yAxis->setLabel(tr("Y"));
-    m_plot3->xAxis->setRange(-50, 50);
+    m_plot3->xAxis->setRange(0, 500);
     m_plot3->yAxis->setRange(-50, 50);
     m_plot3->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot3->axisRect()->setupFullAxesBox(true);
@@ -751,8 +897,13 @@ void MainWindow::initializePlots()
     m_plot3->yAxis->grid()->setVisible(true);
     m_plot3->xAxis->setTicks(false);
     m_plot3->yAxis->setTicks(false);
-    // m_plot3->xAxis->setVisible(false);
+    m_plot3->xAxis->setTickLabels(false);
+    m_plot3->yAxis->setTickLabels(false);
+    m_plot3->xAxis2->setTickLabels(false);
+    m_plot3->xAxis->setVisible(true);
+    m_plot3->xAxis2->setVisible(false);
     m_plot3->yAxis->setVisible(false);
+    m_plot3->yAxis2->setVisible(false);
     // 设置零线为更明显的十字架
     // m_plot3->xAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
     // m_plot3->yAxis->grid()->setZeroLinePen(QPen(QColor("#ffffff"), 2));
@@ -773,6 +924,9 @@ void MainWindow::initializePlots()
     m_plot3->xAxis->setSubTickLengthOut(0);
     m_plot3->yAxis->setSubTickLengthIn(0);
     m_plot3->yAxis->setSubTickLengthOut(0);
+
+    m_plot1->replot();
+    m_plot2->replot();
 }
 
 QString MainWindow::getLocalIPv4Address() const
@@ -865,6 +1019,8 @@ void MainWindow::updateCircleCurve()
     double yMax = m_plot1->yAxis->range().upper;
 
     // 计算坐标轴范围的宽度和高度
+    // double xRange = xMax - xMin - 200;
+    // double yRange = yMax - yMin - 200;
     double xRange = xMax - xMin;
     double yRange = yMax - yMin;
 
@@ -889,6 +1045,137 @@ void MainWindow::updateCircleCurve()
     // 设置数据到曲线
     m_circleCurve->setData(t, x, y);
 
+    // int pxY0 = m_plot1->yAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    // int offsetx = pxY0 - m_plot1->axisRect()->top();
+    // int pxY1 = m_plot1->xAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    // int offsety = pxY1 - m_plot1->axisRect()->right();
+    // m_plot1->xAxis->setOffset(offsetx);
+    // m_plot1->yAxis->setOffset(offsety);
+    // qDebug() << pxY0;
+    // qDebug() << pxY1;
+    // qDebug() << pxY0;
+    // qDebug() << pxY0;
+    // qDebug() << "offsetx: " << offsetx;
+    // qDebug() << "offsety: " << offsety;
+    // qDebug() << "m_plot1->yAxis->range().upper: " << m_plot1->yAxis->range().upper;
+    // qDebug() << "m_plot1->xAxis->range().upper: " << m_plot1->xAxis->range().upper;
+    // qDebug() << "m_plot1->xAxis->range().center: " << m_plot1->xAxis->range().center();
+    // m_plot1->xAxis2->setTickLabelColor(QColor("#cccccc"));
+    // m_plot1->xAxis2->setTickPen(QPen(QColor("#cccccc")));
+    // m_plot1->xAxis2->setSubTickPen(QPen(QColor("#cccccc")));
+    // m_plot1->xAxis2->setBasePen(QPen(QColor("#cccccc")));
+
     // 重新绘制
     m_plot1->replot();
+}
+
+void MainWindow::updateplot1_zerotickerLine(QCustomPlot* plot)
+{
+    int pxY0 = m_plot1->yAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    int offsetx = pxY0 - m_plot1->axisRect()->top();
+    int pxY1 = m_plot1->xAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    int offsety = pxY1 - m_plot1->axisRect()->right();
+    plot->xAxis->setOffset(offsetx);
+    plot->yAxis->setOffset(offsety);
+    plot->xAxis2->setTickLabelColor(QColor("#cccccc"));
+    plot->xAxis2->setTickPen(QPen(QColor("#cccccc")));
+    plot->xAxis2->setSubTickPen(QPen(QColor("#cccccc")));
+    plot->xAxis2->setBasePen(QPen(QColor("#cccccc")));
+}
+
+void MainWindow::updateplot1_zerotickerLine_0()
+{
+/*
+    int pxY0 = m_plot1->yAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    int offsetx = pxY0 - m_plot1->axisRect()->top();
+    int pxY1 = m_plot1->xAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
+    int offsety = pxY1 - m_plot1->axisRect()->right();
+    m_plot1->xAxis->setOffset(-offsetx);
+    m_plot1->yAxis->setOffset(offsety);
+*/
+    m_plot1->xAxis->setOffset(-m_plot1->size().height()/2);
+    m_plot1->yAxis->setOffset(-m_plot1->size().width()/2);
+
+    double plot1_size_width = -m_plot1->size().width();
+    double plot1_size_height = -m_plot1->size().height();
+    // int ratio = qMax(plot1_size_width, plot1_size_height) / qMin(plot1_size_width, plot1_size_height);
+    double ratio = plot1_size_width / plot1_size_height;
+
+    if (ratio >= 1)
+    {
+        m_plot1->xAxis->setRange(- ratio*2000, ratio*2000);
+        m_plot1->yAxis->setRange(- 2000, 2000);
+        // qDebug() << " ratio1:  " << ratio;
+    } else {
+        m_plot1->yAxis->setRange(- 2000/ratio, 2000/ratio);
+        m_plot1->xAxis->setRange(- 2000, 2000);
+        // qDebug() << " ratio2:  " << ratio;
+    }
+
+    // m_plot1->xAxis->setRange()
+
+    m_plot1->xAxis2->setTickLabelColor(QColor("#cccccc"));
+    m_plot1->xAxis2->setTickPen(QPen(QColor("#cccccc")));
+    m_plot1->xAxis2->setSubTickPen(QPen(QColor("#cccccc")));
+    m_plot1->xAxis2->setBasePen(QPen(QColor("#cccccc")));
+
+    m_plot1->replot(QCustomPlot::rpQueuedReplot);
+
+    // updateplot2_Double_axis_line();
+
+}
+
+// 设置A扫实时时序图双轴线位置
+void MainWindow::updateplot2_Double_axis_line()
+{
+    m_plot2->xAxis->setOffset(-m_plot2->size().height()/4);
+    m_plot2->xAxis2->setOffset(-m_plot2->size().height()/4);
+    qDebug() << " plot2 replot " << m_plot2->size().height();
+    m_plot2->replot(QCustomPlot::rpQueuedReplot);
+    // 设置刻度线的网格步长和数量
+    QSharedPointer<QCPAxisTickerFixed> MyTicker(new QCPAxisTickerFixed);
+    MyTicker->setTickStep(100);
+    // MyTicker->setTickCount(20);
+    m_plot2->xAxis->setTicker(MyTicker);
+    m_plot2->xAxis2->setTicker(MyTicker);
+
+    m_plot2->yAxis->setTicker(MyTicker);
+    m_plot2->yAxis2->setTicker(MyTicker);
+
+    double plot2_size_width = -m_plot2->size().width();
+    double plot2_size_height = -m_plot2->size().height();
+    // int ratio = qMax(plot1_size_width, plot1_size_height) / qMin(plot1_size_width, plot1_size_height);
+    double ratio = plot2_size_width / plot2_size_height;
+
+    m_plot2->xAxis->setRange(0, ratio*1000);
+    m_plot2->yAxis->setRange(- 500, 500);
+
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    // m_plot1->replot();
+    if (obj == m_plot1 && event->type() == QEvent::Resize)
+    {
+        QSize newSize = static_cast<QResizeEvent*>(event)->size();
+        // qDebug() << "customPlot resized to:" << newSize;
+        // updateplot1_zerotickerLine_0();
+        // 这里可以做自动更新坐标轴、重绘等
+        // m_plot1->replot(QCustomPlot::rpQueuedReplot);
+        // m_plot2->replot(QCustomPlot::rpQueuedReplot);
+        m_plot1->replot();
+        // m_plot2->replot();
+        emit plotsize_changed();
+    }
+
+    if (obj == m_plot2 && event->type() == QEvent::Resize)
+    {
+        QSize newSize = static_cast<QResizeEvent*>(event)->size();
+        // qDebug() << "customPlot2 resized to:" << newSize;
+
+        m_plot2->replot();
+        emit plot2size_changed();
+    }
+
+    return QMainWindow::eventFilter(obj, event);
 }

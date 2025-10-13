@@ -145,7 +145,7 @@ void MainWindow::setupFirstRow()
     // 第一行：参数详情显示 + 模式信息
     QFrame *firstRowFrame = new QFrame(this);
     firstRowFrame->setFrameStyle(QFrame::Box);
-    firstRowFrame->setFixedHeight(200);
+    firstRowFrame->setFixedHeight(150);
     // firstRowFrame->setStyleSheet("QFrame{"
     //                            " border: 1px solid #eeeeee;"
     //                            "}"); // 2 像素 实线
@@ -190,8 +190,8 @@ void MainWindow::setupFirstRow()
     for (QLabel* label : paramLabels) {
         label->setFont(paramFont);
         // label->setStyleSheet("QLabel { color: white; background-color: #2b2b2b; padding: 5px; border: 1px solid #555; font-weight: bold; text-align: center; font-size: 30px}");
-        label->setStyleSheet("QLabel { color: rgba(147, 145, 145, 1); background-color: #2b2b2b; padding: 5px; border: 1px solid #555; font-weight: bold; text-align: center; font-size: 30px}");
-        label->setMinimumSize(150, 50);
+        label->setStyleSheet("QLabel { color: rgba(147, 145, 145, 1); background-color: #2b2b2b; padding: 5px; border: 1px solid #555; font-weight: bold; text-align: center; font-size: 20px}");
+        label->setMinimumSize(150, 48);
         label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         label->setAlignment(Qt::AlignCenter);
     }
@@ -215,8 +215,9 @@ void MainWindow::setupFirstRow()
     // 模式信息显示区域
     m_modeInfoFrame = new QFrame(this);
     m_modeInfoFrame->setFrameStyle(QFrame::Box);
-    m_modeInfoFrame->setFixedWidth(300);
+    m_modeInfoFrame->setFixedWidth(284);
     m_modeInfoLayout = new QVBoxLayout(m_modeInfoFrame);
+    m_modeInfoLayout->setContentsMargins(QMargins(2,2,2,2));
 
     // m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
     m_modeInfoLabel = new QLabel(this);
@@ -299,7 +300,7 @@ void MainWindow::setupSecondRow()
     m_plotArea3Layout->setContentsMargins(0, 0, 0, 0);
     m_plotArea3Layout->setSpacing(0);
     m_plot3 = new QCustomPlot(this);
-    m_plot3->setMinimumSize(400, 150);
+    m_plot3->setMinimumSize(400, 98);
     m_plotArea3Layout->addWidget(m_plot3);
 
     // 控制按键区域（右下）
@@ -394,7 +395,7 @@ void MainWindow::setupSecondRow()
     m_modeInfoLabel2 = new QLabel(tr("Reflection\nMode"), this);
     m_modeInfoLabel2->setAlignment(Qt::AlignCenter);
     m_modeInfoLabel2->setFixedWidth(178);
-    m_modeInfoLabel2->setFixedHeight(180);
+    m_modeInfoLabel2->setFixedHeight(150);
     QFont modeFont;
     modeFont.setPointSize(10);
     modeFont.setBold(true);
@@ -407,10 +408,14 @@ void MainWindow::setupSecondRow()
     m_middleLayout_1->addWidget(m_plotArea_frame1);  // 绘图区1和2
     m_middleLayout_1->addWidget(m_plotArea3);        // 绘图区3
 
+    m_middleLayout_1->setContentsMargins(QMargins(2,2,2,2));
+
     m_middleLayout_border->addWidget(m_plotArea_frame);
     m_middleLayout_border->addWidget(stack_menu_frame);
     m_middleLayout_border->addWidget(m_controlFrame);
-    m_plotArea3->setFixedHeight(150);
+    m_middleLayout_border->setContentsMargins(QMargins(4,4,4,4));
+    // m_plotArea3->setFixedHeight(150);
+    m_plotArea3->setFixedHeight(100);
 
     m_mainLayout->addWidget(m_middleFrame);
 }
@@ -422,8 +427,8 @@ void MainWindow::setupThirdRow()
     thirdRowFrame->setFrameStyle(QFrame::Box);
 
     QVBoxLayout *thirdRowLayout = new QVBoxLayout(thirdRowFrame);
-    thirdRowLayout->setSpacing(5);      // 连接状态和Tab之间的间距
-    thirdRowLayout->setContentsMargins(5, 5, 5, 5);  // 第三行内部边距
+    thirdRowLayout->setSpacing(2);      // 连接状态和Tab之间的间距
+    thirdRowLayout->setContentsMargins(2, 2, 2, 2);  // 第三行内部边距
 
     // 设备连接状态显示
     m_connectionStatusFrame = new QFrame(this);

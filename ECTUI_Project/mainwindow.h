@@ -151,6 +151,7 @@ private:
     QFrame *m_plotArea3;
     QVBoxLayout *m_plotArea3Layout;
     QCustomPlot *m_plot3;
+    int m_plot3_heigh = 100;
 
     // 控制按键区域（右下）
     QFrame *m_controlFrame;

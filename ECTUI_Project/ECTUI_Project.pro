@@ -1,4 +1,4 @@
-QT       += core gui xml sql  # 用于加载对xml和sql的支持
+QT       += core gui xml sql  # 用于加载对xml和sql的支�?
 QT += concurrent
 QT += printsupport
 QT += serialport
@@ -30,12 +30,12 @@ FORMS += \
 
 
 win32 {
-    QMAKE_CXXFLAGS += /utf-8
+    msvc: QMAKE_CXXFLAGS += /utf-8
 }
 
 msvc {
     QMAKE_CFLAGS += /utf-8
-    QMAKE_CXXFLAGS += /utf-8
+    msvc: QMAKE_CXXFLAGS += /utf-8
 }
 
 

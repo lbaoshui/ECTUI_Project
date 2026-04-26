@@ -1,0 +1,22 @@
+QMAKE_CXX.QT_COMPILER_STDCXX = 201703L
+QMAKE_CXX.QMAKE_GCC_MAJOR_VERSION = 13
+QMAKE_CXX.QMAKE_GCC_MINOR_VERSION = 2
+QMAKE_CXX.QMAKE_GCC_PATCH_VERSION = 0
+QMAKE_CXX.COMPILER_MACROS = \
+    QT_COMPILER_STDCXX \
+    QMAKE_GCC_MAJOR_VERSION \
+    QMAKE_GCC_MINOR_VERSION \
+    QMAKE_GCC_PATCH_VERSION
+QMAKE_CXX.INCDIRS = \
+    F:/Programs/Strawberry/c/include/c++/13.2.0 \
+    F:/Programs/Strawberry/c/include/c++/13.2.0/x86_64-w64-mingw32 \
+    F:/Programs/Strawberry/c/include/c++/13.2.0/backward \
+    F:/Programs/Strawberry/c/lib/gcc/x86_64-w64-mingw32/13.2.0/include \
+    F:/Programs/Strawberry/c/include \
+    F:/Programs/Strawberry/c/lib/gcc/x86_64-w64-mingw32/13.2.0/include-fixed \
+    F:/Programs/Strawberry/c/x86_64-w64-mingw32/include
+QMAKE_CXX.LIBDIRS = \
+    F:/Programs/Strawberry/c/lib/gcc/x86_64-w64-mingw32/13.2.0 \
+    F:/Programs/Strawberry/c/lib/gcc \
+    F:/Programs/Strawberry/c/x86_64-w64-mingw32/lib \
+    F:/Programs/Strawberry/c/lib

@@ -1,5 +1,11 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "devicemanager.h"
+
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+
 #include <cmath>
 
 #ifndef M_PI
@@ -9,6 +15,7 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , m_deviceManager(new DeviceManager(this))
 {
     ui->setupUi(this);
     setupUI();
@@ -133,6 +140,7 @@ void MainWindow::setupUI()
 
     // 更新参数显示
     updateParameterDisplay();
+    updateDeviceConnectionStatusText();
 
     showMaximized();
 
@@ -438,12 +446,18 @@ void MainWindow::setupThirdRow()
 
     m_connectionStatusLabel = new QLabel(tr("设备连接状态显示:"), this);
     m_connectionStatusLabel->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 20px; border-radius: 3px; }");
+    m_connectionStatusLabel->setCursor(Qt::PointingHandCursor);
+    m_connectionStatusLabel->setToolTip(tr("双击选择要显示的以太网 IP"));
+    m_connectionStatusLabel->installEventFilter(this);
     m_connectionStatusLayout->addWidget(m_connectionStatusLabel);
     // m_connectionStatusLayout->setMargin(2);
     m_connectionStatusLayout->setSpacing(2);
 
     m_connectionStatusLabel2 = new QLabel(tr("SSEC Board usb not connected"), this);
     m_connectionStatusLabel2->setStyleSheet("QLabel { color: #ffcc02; background-color: #252526; border: 1px solid #3c3c3c; font-weight: bold; padding: 5px; font-size: 20px; border-radius: 3px; }");
+    m_connectionStatusLabel2->setCursor(Qt::PointingHandCursor);
+    m_connectionStatusLabel2->setToolTip(tr("双击设置下位机 IP 和端口并连接"));
+    m_connectionStatusLabel2->installEventFilter(this);
     m_connectionStatusLayout->addWidget(m_connectionStatusLabel2);
 
     // 设置连接状态布局间距
@@ -713,6 +727,43 @@ void MainWindow::setupConnections()
             this, &MainWindow::updateCircleCurve);
     connect(m_plot1->yAxis, QOverload<const QCPRange &>::of(&QCPAxis::rangeChanged),
             this, &MainWindow::updateCircleCurve);
+
+    connect(m_deviceManager,
+            &DeviceManager::connectionStateChanged,
+            this,
+            [this](ConnectionState state) {
+                updateDeviceConnectionStatusText();
+
+                if (!m_deviceConnectionPending || state != ConnectionState::Connected) {
+                    return;
+                }
+
+                m_deviceConnectionPending = false;
+                QMessageBox::information(this,
+                                         tr("连接设备成功"),
+                                         tr("已成功连接到下位机 %1:%2。")
+                                             .arg(m_deviceHost)
+                                             .arg(m_devicePort));
+            });
+
+    connect(m_deviceManager,
+            &DeviceManager::errorOccurred,
+            this,
+            [this](const QString &message) {
+                updateDeviceConnectionStatusText();
+
+                if (!m_deviceConnectionPending) {
+                    return;
+                }
+
+                m_deviceConnectionPending = false;
+                QMessageBox::warning(this,
+                                     tr("连接设备失败"),
+                                     tr("连接到下位机 %1:%2 失败：\n%3")
+                                         .arg(m_deviceHost)
+                                         .arg(m_devicePort)
+                                         .arg(message));
+            });
 }
 
 void MainWindow::initializePlots()
@@ -934,25 +985,184 @@ void MainWindow::initializePlots()
     m_plot2->replot();
 }
 
-QString MainWindow::getLocalIPv4Address() const
+QVector<MainWindow::EthernetInterfaceInfo> MainWindow::getAvailableEthernetInterfaces() const
 {
+    QVector<EthernetInterfaceInfo> preferredInterfaces;
+    QVector<EthernetInterfaceInfo> fallbackInterfaces;
+
     for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
         if (!(iface.flags() & QNetworkInterface::IsUp) ||
             !(iface.flags() & QNetworkInterface::IsRunning) ||
             (iface.flags() & QNetworkInterface::IsLoopBack)) {
             continue;
         }
-        for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-            const QHostAddress addr = entry.ip();
-            if (addr.protocol() == QAbstractSocket::IPv4Protocol && iface.hardwareAddress() == "60:CF:84:AB:65:02") {
-                qDebug() << "(iface.name(): " << iface.name();
-                qDebug() << iface.humanReadableName();
-                return addr.toString();
-            }
+
+        const bool looksLikeNamedEthernet =
+            iface.humanReadableName().startsWith(QStringLiteral("以太网")) ||
+            iface.humanReadableName().startsWith(QStringLiteral("Ethernet"), Qt::CaseInsensitive);
+        const bool looksLikeEthernetType = iface.type() == QNetworkInterface::Ethernet;
+
+        if (!looksLikeNamedEthernet && !looksLikeEthernetType) {
+            continue;
         }
 
+        for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+            const QHostAddress addr = entry.ip();
+            if (addr.protocol() != QAbstractSocket::IPv4Protocol || addr.isLoopback()) {
+                continue;
+            }
+
+            const EthernetInterfaceInfo info{iface.name(), iface.humanReadableName(), addr.toString()};
+            fallbackInterfaces.append(info);
+
+            if (looksLikeNamedEthernet) {
+                preferredInterfaces.append(info);
+            }
+        }
     }
-    return QStringLiteral("0.0.0.0");
+
+    return preferredInterfaces.isEmpty() ? fallbackInterfaces : preferredInterfaces;
+}
+
+QString MainWindow::getLocalIPv4Address() const
+{
+    const QVector<EthernetInterfaceInfo> interfaces = getAvailableEthernetInterfaces();
+    if (interfaces.isEmpty()) {
+        return QStringLiteral("0.0.0.0");
+    }
+
+    if (!m_selectedInterfaceId.isEmpty()) {
+        for (const EthernetInterfaceInfo &info : interfaces) {
+            if (info.interfaceId == m_selectedInterfaceId) {
+                return info.ipAddress;
+            }
+        }
+    }
+
+    return interfaces.constFirst().ipAddress;
+}
+
+void MainWindow::chooseLocalInterfaceIp()
+{
+    const QVector<EthernetInterfaceInfo> interfaces = getAvailableEthernetInterfaces();
+    if (interfaces.isEmpty()) {
+        QMessageBox::information(this,
+                                 tr("选择本机以太网"),
+                                 tr("当前未检测到可用的以太网 IPv4 地址。"));
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("选择本机以太网"));
+
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    QLabel *promptLabel = new QLabel(tr("请选择主界面要显示的以太网名称及其 IP："), &dialog);
+    QComboBox *interfaceComboBox = new QComboBox(&dialog);
+    interfaceComboBox->setMinimumWidth(320);
+
+    int currentIndex = 0;
+    for (int index = 0; index < interfaces.size(); ++index) {
+        const EthernetInterfaceInfo &info = interfaces[index];
+        interfaceComboBox->addItem(tr("%1 (%2)").arg(info.displayName, info.ipAddress), info.interfaceId);
+
+        if (!m_selectedInterfaceId.isEmpty() && info.interfaceId == m_selectedInterfaceId) {
+            currentIndex = index;
+        }
+    }
+    interfaceComboBox->setCurrentIndex(currentIndex);
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                                       Qt::Horizontal,
+                                                       &dialog);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    layout->addWidget(promptLabel);
+    layout->addWidget(interfaceComboBox);
+    layout->addWidget(buttonBox);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    m_selectedInterfaceId = interfaceComboBox->currentData().toString();
+    qDebug() << "m_selectedInterfaceId : " << m_selectedInterfaceId;
+    updateParameterDisplay();
+}
+
+void MainWindow::connectToRemoteDevice()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("连接下位机设备"));
+
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    QLabel *promptLabel = new QLabel(tr("请输入下位机的 IP Address 和 Port："), &dialog);
+    QFormLayout *formLayout = new QFormLayout();
+    QLineEdit *ipEdit = new QLineEdit(&dialog);
+    QSpinBox *portSpinBox = new QSpinBox(&dialog);
+
+    ipEdit->setPlaceholderText(QStringLiteral("192.168.1.10"));
+    ipEdit->setText(m_deviceHost);
+    portSpinBox->setRange(1, 65535);
+    portSpinBox->setValue(m_devicePort);
+
+    formLayout->addRow(tr("IP Address:"), ipEdit);
+    formLayout->addRow(tr("Port:"), portSpinBox);
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(Qt::Horizontal, &dialog);
+    QPushButton *connectButton = buttonBox->addButton(tr("连接设备"), QDialogButtonBox::AcceptRole);
+    buttonBox->addButton(QDialogButtonBox::Cancel);
+
+    connect(connectButton,
+            &QPushButton::clicked,
+            &dialog,
+            [&dialog, ipEdit]() {
+                QHostAddress hostAddress;
+                if (!hostAddress.setAddress(ipEdit->text().trimmed())) {
+                    QMessageBox::warning(&dialog,
+                                         QObject::tr("IP 地址无效"),
+                                         QObject::tr("请输入有效的下位机 IP 地址。"));
+                    return;
+                }
+
+                dialog.accept();
+            });
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    layout->addWidget(promptLabel);
+    layout->addLayout(formLayout);
+    layout->addWidget(buttonBox);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    m_deviceHost = ipEdit->text().trimmed();
+    m_devicePort = static_cast<quint16>(portSpinBox->value());
+    m_deviceConnectionPending = true;
+    updateDeviceConnectionStatusText();
+    m_deviceManager->connectToDevice(m_deviceHost, m_devicePort);
+}
+
+void MainWindow::updateDeviceConnectionStatusText()
+{
+    if (m_deviceHost.isEmpty()) {
+        m_connectionStatusLabel2->setText(tr("下位机未连接，双击设置 IP/Port"));
+        return;
+    }
+
+    const QString endpoint = tr("%1:%2").arg(m_deviceHost).arg(m_devicePort);
+    switch (m_deviceManager->connectionState()) {
+    case ConnectionState::Connecting:
+        m_connectionStatusLabel2->setText(tr("下位机连接中: %1").arg(endpoint));
+        break;
+    case ConnectionState::Connected:
+        m_connectionStatusLabel2->setText(tr("下位机已连接: %1").arg(endpoint));
+        break;
+    case ConnectionState::Disconnected:
+        m_connectionStatusLabel2->setText(tr("下位机未连接: %1").arg(endpoint));
+        break;
+    }
 }
 
 void MainWindow::updateParameterDisplay()
@@ -1163,6 +1373,18 @@ void MainWindow::updateplot2_Double_axis_line()
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     // m_plot1->replot();
+    if (obj == m_connectionStatusLabel && event->type() == QEvent::MouseButtonDblClick)
+    {
+        chooseLocalInterfaceIp();
+        return true;
+    }
+
+    if (obj == m_connectionStatusLabel2 && event->type() == QEvent::MouseButtonDblClick)
+    {
+        connectToRemoteDevice();
+        return true;
+    }
+
     if (obj == m_plot1 && event->type() == QEvent::Resize)
     {
         QSize newSize = static_cast<QResizeEvent*>(event)->size();

@@ -35,6 +35,8 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class DeviceManager;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -172,6 +174,11 @@ private:
     QHBoxLayout *m_connectionStatusLayout;
     QLabel *m_connectionStatusLabel;
     QLabel *m_connectionStatusLabel2;
+    QString m_selectedInterfaceId;
+    DeviceManager *m_deviceManager;
+    QString m_deviceHost;
+    quint16 m_devicePort = 8899;
+    bool m_deviceConnectionPending = false;
 
     // 底部四个菜单分栏
     QTabWidget *m_bottomTabWidget;
@@ -228,7 +235,17 @@ private:
     void initializePlots();
 
     // 工具函数
+    struct EthernetInterfaceInfo {
+        QString interfaceId;
+        QString displayName;
+        QString ipAddress;
+    };
+
+    QVector<EthernetInterfaceInfo> getAvailableEthernetInterfaces() const;
     QString getLocalIPv4Address() const;
+    void chooseLocalInterfaceIp();
+    void connectToRemoteDevice();
+    void updateDeviceConnectionStatusText();
     void updateParameterDisplay();
     void updateCircleCurve(); // 更新圆形曲线
 

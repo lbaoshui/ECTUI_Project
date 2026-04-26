@@ -145,7 +145,7 @@ void MainWindow::setupFirstRow()
     // 第一行：参数详情显示 + 模式信息
     QFrame *firstRowFrame = new QFrame(this);
     firstRowFrame->setFrameStyle(QFrame::Box);
-    firstRowFrame->setFixedHeight(150);
+    firstRowFrame->setFixedHeight(152);
     // firstRowFrame->setStyleSheet("QFrame{"
     //                            " border: 1px solid #eeeeee;"
     //                            "}"); // 2 像素 实线
@@ -300,7 +300,7 @@ void MainWindow::setupSecondRow()
     m_plotArea3Layout->setContentsMargins(0, 0, 0, 0);
     m_plotArea3Layout->setSpacing(0);
     m_plot3 = new QCustomPlot(this);
-    m_plot3->setMinimumSize(400, 98);
+    m_plot3->setMinimumSize(400, m_plot3_heigh-2);
     m_plotArea3Layout->addWidget(m_plot3);
 
     // 控制按键区域（右下）
@@ -415,7 +415,7 @@ void MainWindow::setupSecondRow()
     m_middleLayout_border->addWidget(m_controlFrame);
     m_middleLayout_border->setContentsMargins(QMargins(4,4,4,4));
     // m_plotArea3->setFixedHeight(150);
-    m_plotArea3->setFixedHeight(100);
+    m_plotArea3->setFixedHeight(m_plot3_heigh);
 
     m_mainLayout->addWidget(m_middleFrame);
 }
@@ -944,10 +944,13 @@ QString MainWindow::getLocalIPv4Address() const
         }
         for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
             const QHostAddress addr = entry.ip();
-            if (addr.protocol() == QAbstractSocket::IPv4Protocol) {
+            if (addr.protocol() == QAbstractSocket::IPv4Protocol && iface.hardwareAddress() == "60:CF:84:AB:65:02") {
+                qDebug() << "(iface.name(): " << iface.name();
+                qDebug() << iface.humanReadableName();
                 return addr.toString();
             }
         }
+
     }
     return QStringLiteral("0.0.0.0");
 }

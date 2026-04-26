@@ -14,13 +14,14 @@ CONFIG += c++17
 
 SOURCES += \
     customplot.cpp \
+    devicemanager.cpp \
     main.cpp \
-    mainwindow.cpp \
     mainwindow.cpp \
     qcustomplot.cpp
 
 HEADERS += \
     customplot.h \
+    devicemanager.h \
     mainwindow.h \
     qcustomplot.h
 

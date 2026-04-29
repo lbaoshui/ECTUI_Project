@@ -17,12 +17,16 @@ SOURCES += \
     devicemanager.cpp \
     main.cpp \
     mainwindow.cpp \
+    probe.cpp \
+    probemanager.cpp \
     qcustomplot.cpp
 
 HEADERS += \
     customplot.h \
     devicemanager.h \
     mainwindow.h \
+    probe.h \
+    probemanager.h \
     qcustomplot.h
 
 FORMS += \

@@ -26,6 +26,7 @@ public:
     // ── 1. 身份信息 ─────────────────────────
     int id() const { return m_id; }
     int hardwareChannel() const { return m_hwChannel; }
+    void setHardwareChannel(int channel);
     QString name() const { return m_name; }
     void setName(const QString &name) { m_name = name; }
 

@@ -22,6 +22,11 @@ Probe::Probe(int probeId, int hardwareChannel, QObject *parent)
     m_rawData.fill(0, DeviceManager::ADC_SAMPLES_PER_CH);
 }
 
+void Probe::setHardwareChannel(int channel)
+{
+    m_hwChannel = channel;
+}
+
 void Probe::setExcitation(int freq, int phase, int amp)
 {
     m_excitationFreq = freq;

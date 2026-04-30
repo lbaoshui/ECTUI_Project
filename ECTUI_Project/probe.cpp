@@ -38,12 +38,15 @@ void Probe::setHardwareChannel(int channel)
     m_hwChannel = channel;
 }
 
+<<<<<<< HEAD
 /**
  * @brief 设置 DA 激励参数
  * @param freq  激励频率 (Hz)
  * @param phase 激励相位 (度)
  * @param amp   激励幅度 (%)
  */
+=======
+>>>>>>> 3244408ef6c9a84723214752b612c722ab5eba91
 void Probe::setExcitation(int freq, int phase, int amp)
 {
     m_excitationFreq = freq;

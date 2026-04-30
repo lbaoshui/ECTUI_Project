@@ -112,7 +112,7 @@ void ProbeManager::setProbeHardwareChannel(int probeIndex, int hwChannel)
         qWarning() << "硬件通道号非法:" << hwChannel;
         return;
     }
-   m_probes[probeIndex]->setHardwareChannel(hwChannel);
+    m_probes[probeIndex]->setHardwareChannel(hwChannel);
     rebuildChannelIndex();
 }
 

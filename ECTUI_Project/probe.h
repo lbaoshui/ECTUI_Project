@@ -26,6 +26,7 @@ public:
     // ── 1. 身份信息 ─────────────────────────
     int id() const { return m_id; }
     int hardwareChannel() const { return m_hwChannel; }
+    void setHardwareChannel(int channel);
     QString name() const { return m_name; }
     void setName(const QString &name) { m_name = name; }
 
@@ -65,39 +66,43 @@ public:
     void updateSensitivity();   // 基于基线计算灵敏度
 
 signals:
-    void enabledChanged(bool enabled);
-    void dataUpdated();
-    void vppChanged(float vpp);
-    void sensitivityChanged(float sensitivity);
-    void baselineCaptured(float baselineVpp);
-    void faultStateChanged(bool hasFault);
+    void enabledChanged(bool enabled);          ///< 探头启用/禁用状态变化
+    void dataUpdated();                         ///< 原始数据已更新
+    void vppChanged(float vpp);                 ///< Vpp 计算结果变化
+    void sensitivityChanged(float sensitivity); ///< 灵敏度变化
+    void baselineCaptured(float baselineVpp);   ///< 基线采集完成
+    void faultStateChanged(bool hasFault);      ///< 故障状态变化
 
 private:
+    /**
+     * @brief 内部 Vpp 计算（去极值平均法）
+     * @return 峰峰值电压
+     */
     float computeVppInternal() const;
 
     // === 1. 身份 ===
-    int m_id;           // 逻辑编号 (0,1,2...)
-    int m_hwChannel;    // 硬件通道号 (1-16)
-    QString m_name;     // 显示名称
+    int m_id;           ///< 逻辑编号 (0,1,2...)
+    int m_hwChannel;    ///< 硬件通道号 (1-16)
+    QString m_name;     ///< 显示名称
 
     // === 2. 激励配置 ===
-    int m_excitationFreq = 10000;   // Hz
-    int m_excitationPhase = 0;      // 度
-    int m_excitationAmp = 60;       // %
+    int m_excitationFreq = 10000;   ///< 激励频率 (Hz)
+    int m_excitationPhase = 0;      ///< 激励相位 (度)
+    int m_excitationAmp = 60;       ///< 激励幅度 (%)
 
     // === 3. 实时数据 ===
-    QVector<quint16> m_rawData;
-    QDateTime m_lastUpdateTime;
+    QVector<quint16> m_rawData;     ///< 原始 ADC 采样值
+    QDateTime m_lastUpdateTime;     ///< 最近一次数据更新时间
 
     // === 4. 计算结果 ===
-    float m_vpp = 0.0f;
-    float m_baselineVpp = 0.0f;
-    float m_sensitivity = 0.0f;
+    float m_vpp = 0.0f;             ///< 当前峰峰值电压
+    float m_baselineVpp = 0.0f;     ///< 基线 Vpp
+    float m_sensitivity = 0.0f;     ///< 相对灵敏度 (%)
 
     // === 5. 状态 ===
-    bool m_enabled = true;
-    bool m_hasFault = false;
-    bool m_baselineSet = false;
+    bool m_enabled = true;          ///< 是否启用
+    bool m_hasFault = false;        ///< 是否存在数据异常
+    bool m_baselineSet = false;     ///< 是否已采集基线
 };
 
 #endif // PROBE_H

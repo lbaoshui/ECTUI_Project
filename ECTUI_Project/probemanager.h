@@ -72,15 +72,18 @@ public:
     void updateAllSensitivity();
 
 signals:
-    void probeCountChanged(int count);
-    void probeAdded(Probe *probe);
-    void probeRemoved(int index);
+    void probeCountChanged(int count);  ///< 探头总数发生变化
+    void probeAdded(Probe *probe);      ///< 新增探头
+    void probeRemoved(int index);       ///< 指定索引的探头被移除
 
 private:
+    /**
+     * @brief 重建硬件通道到探头索引的快速查找表
+     */
     void rebuildChannelIndex();
 
-    QVector<QSharedPointer<Probe>> m_probes;
-    QMap<int, int> m_hwChannelToProbeIndex;  // 硬件通道 -> Probe 索引
+    QVector<QSharedPointer<Probe>> m_probes;  ///< 探头列表（内部共享所有权）
+    QMap<int, int> m_hwChannelToProbeIndex;   ///< 硬件通道 -> Probe 索引映射
 };
 
 #endif // PROBEMANAGER_H

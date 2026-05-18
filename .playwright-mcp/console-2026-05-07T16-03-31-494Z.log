@@ -1,0 +1,49 @@
+[    1490ms] [INFO] 框架和 SDK 输出的日志默认不展示，可在框架配置文件中设置开启，详见 https://doc.weixin.qq.com/doc/w3_AWkASAb9APAr8IdJI5VS0OyqetUE6?scode=ANAAyQcbAAgB8qKjm9AWkASAb9APA @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:0
+[    1573ms] [LOG] Error @ :2
+[    1693ms] [LOG] Error @ :2
+[    1719ms] [LOG] Error @ :2
+[    1738ms] [LOG] Error @ :2
+[    1750ms] [LOG] Error @ :2
+[    2008ms] [LOG] Error @ :2
+[    2182ms] [LOG] Error @ :2
+[    2187ms] [LOG] Error @ :2
+[    2236ms] [LOG] Service Worker registered success with scope: https://www.xiaohongshu.com/ @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    2321ms] [LOG] Error @ :2
+[    3020ms] [ERROR] [loginStatusInterceptor] Response error: HTTPServerError: 无登录信息，或登录信息为空
+    at fulfilled (https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209233)
+    at https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209762 {data: Object, status: 401, statusText: , headers: Object, config: Object} {url: //edith.xiaohongshu.com/api/sns/web/v2/user/me, method: get, headers: Object, transformRequest: Array(1), transformResponse: Array(1)} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    3022ms] [LOG] Error @ :2
+[    3037ms] [ERROR] [loginStatusInterceptor] Response error: HTTPServerError: 无登录信息，或登录信息为空
+    at fulfilled (https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209233)
+    at https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209762 {data: Object, status: 401, statusText: , headers: Object, config: Object} {url: //edith.xiaohongshu.com/api/sns/web/v1/system/config, method: get, headers: Object, transformRequest: Array(1), transformResponse: Array(1)} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    3110ms] [ERROR] [loginStatusInterceptor] Response error: HTTPServerError: 无登录信息，或登录信息为空
+    at fulfilled (https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209233)
+    at https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209762 {data: Object, status: 401, statusText: , headers: Object, config: Object} {url: //edith.xiaohongshu.com/api/sns/web/v1/board/user, method: get, params: Object, headers: Object, transformRequest: Array(1)} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    3111ms] [ERROR] [loginStatusInterceptor] Response error: HTTPServerError: 无登录信息，或登录信息为空
+    at fulfilled (https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209233)
+    at https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209762 {data: Object, status: 401, statusText: , headers: Object, config: Object} {url: //edith.xiaohongshu.com/api/sns/web/v2/user/me, method: get, headers: Object, transformRequest: Array(1), transformResponse: Array(1)} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    3128ms] [ERROR] [loginStatusInterceptor] Response error: HTTPServerError: 无登录信息，或登录信息为空
+    at fulfilled (https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209233)
+    at https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:1:209762 {data: Object, status: 401, statusText: , headers: Object, config: Object} {url: //edith.xiaohongshu.com/api/sns/web/v1/search/recommend, method: get, params: Object, headers: Object, transformRequest: Array(1)} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/index.054c48c9.js:24
+[    3243ms] [LOG] Error @ :2
+[    3295ms] [LOG] Error @ :2
+[    3333ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3333ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3334ms] [ERROR] Failed to load resource: net::ERR_FAILED @ chrome-extension://invalid/:0
+[    3969ms] [ERROR] TypeError: i is not a function
+    at https://www.xiaohongshu.com/search_result/?keyword=%E6%B7%B1%E5%9C%B3%E5%BF%85%E5%90%83%E9%A4%90%E5%8E%85:1:4567 @ https://www.xiaohongshu.com/search_result/?keyword=%E6%B7%B1%E5%9C%B3%E5%BF%85%E5%90%83%E9%A4%90%E5%8E%85:0
+[    4180ms] [INFO] Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner. @ https://www.xiaohongshu.com/search_result?keyword=%E6%B7%B1%E5%9C%B3%E5%BF%85%E5%90%83%E9%A4%90%E5%8E%85&type=51:0
+[   11973ms] [LOG] Error @ :2
+[   14041ms] [LOG] Error @ :2
+[   14604ms] [LOG] Error @ :2
+[   18180ms] [LOG] Error @ :2
+[   20248ms] [LOG] Error @ :2
+[   20446ms] [LOG] {measurement_name: paintTiming, measurement_data: Object} @ https://fe-static.xhscdn.com/formula-static/xhs-pc-web/public/resource/js/vendor-dynamic.f9e4079a.js:0
+[   20554ms] [LOG] Error @ :2
+[   21608ms] [LOG] Error @ :2
+[   23417ms] [LOG] Error @ :2

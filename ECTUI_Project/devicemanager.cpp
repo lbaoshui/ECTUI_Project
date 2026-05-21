@@ -13,6 +13,17 @@ namespace {
 // 如果后续硬件前端增益或标定方式变化，只需要修改这一处即可。
 constexpr float kVppScale = 1.03f * 0.122f;
 
+constexpr quint32 kAd7768PacketId0 = 0xAA55AA55;        // 数据帧的包头标识
+constexpr quint32 kAd7768LockinPacketId = 0xAA55AA55;   // 锁相结果包的包头标识
+constexpr quint32 kAd7768RawAdcPacketId = 0xAA55CC33;   // 原始ADC波形包的包头标识
+constexpr int kAd7768PacketHeaderSize = 16;
+constexpr int kAd7768LockinFrameBytes = 64;
+constexpr int kAd7768RawSampleBytes = 32;
+constexpr int kAd7768Channels = 8;
+constexpr int kAd7768MaxPayloadBytes = 16 * 1024 * 1024;   // 最大负载字节数的限制
+
+const QByteArray kAd7768PacketHeaderBytes = QByteArray::fromHex("55aa55aa");   // 包头字节
+
 void appendUInt32LE(QByteArray &buffer, quint32 value)
 {
     // DA/AD 配置协议按 little-endian 发送 32 位整数。
@@ -27,18 +38,28 @@ quint16 readUInt16LE(const char *data)
     return qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(data));
 }
 
+quint32 readUInt32LE(const char *data)
+{
+    return qFromLittleEndian<quint32>(reinterpret_cast<const uchar *>(data));
+}
+
+qint32 readInt32LE(const char *data)
+{
+    return qFromLittleEndian<qint32>(reinterpret_cast<const uchar *>(data));
+}
+
 } // namespace
 
 const QByteArray DeviceManager::DA_CONF_HEADER =
     QByteArray::fromHex("ccff55aa0001000010000000");
 const QByteArray DeviceManager::AD_START_CMD =
-    QByteArray::fromHex("a0ff55aa");
+    QByteArray::fromHex("a0ff55aa");                      // 采样开始的指令
 const QByteArray DeviceManager::AD_RATE_CMD =
-    QByteArray::fromHex("20aa55aa");
+    QByteArray::fromHex("20aa55aa");                      // 配置开发板采样率
 const QByteArray DeviceManager::ADC_DATA_HEADER =
-    QByteArray::fromHex("33dd33dd");
+    QByteArray::fromHex("33dd33dd");                      // 数据包标志
 const QByteArray DeviceManager::ADC_DATA_LEN_TAG =
-    QByteArray::fromHex("40400000");
+    QByteArray::fromHex("40400000");                      // 旧版数据包长度：16384个byte
 
 DeviceManager::DeviceManager(QObject *parent)
     : QObject(parent),
@@ -57,11 +78,19 @@ DeviceManager::DeviceManager(QObject *parent)
     qRegisterMetaType<ConnectionState>("ConnectionState");
     qRegisterMetaType<AdcChannelData>("AdcChannelData");
     qRegisterMetaType<QVector<AdcChannelData>>("QVector<AdcChannelData>");
+    qRegisterMetaType<LockinChannelData>("LockinChannelData");
+    qRegisterMetaType<QVector<LockinChannelData>>("QVector<LockinChannelData>");
+    qRegisterMetaType<LockinFrameData>("LockinFrameData");
+    qRegisterMetaType<QVector<LockinFrameData>>("QVector<LockinFrameData>");
+    qRegisterMetaType<RawAdcChannelData>("RawAdcChannelData");
+    qRegisterMetaType<QVector<RawAdcChannelData>>("QVector<RawAdcChannelData>");
 
-    // 统一在 DeviceManager 内部处理 socket 生命周期与事件分发。
-    connect(m_socket, &QTcpSocket::connected, this, &DeviceManager::onConnected);
+    // 统一在 DeviceManager 内部处理 socket 生命周期与事件分发。  
+    connect(m_socket, &QTcpSocket::connected, this, &DeviceManager::onConnected);           // socket连接成功，更新标志位 
     connect(m_socket, &QTcpSocket::disconnected, this, &DeviceManager::onDisconnected);
-    connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived);
+    // connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived);
+    connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived_New);    // 新版数据接收解析方式
+
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     connect(m_socket, &QTcpSocket::errorOccurred, this, &DeviceManager::onSocketError);
 #else
@@ -77,6 +106,7 @@ DeviceManager::~DeviceManager()
     disconnectFromDevice();
 }
 
+// 连接到设备
 void DeviceManager::connectToDevice(const QString &host, quint16 port)
 {
     // 已经处于有效连接时直接返回，避免重复 connectToHost。
@@ -87,6 +117,8 @@ void DeviceManager::connectToDevice(const QString &host, quint16 port)
 
     // 每次重新连接前清空旧接收缓冲，避免把上一次残留数据误判为新帧。
     m_receiveBuffer.clear();
+    m_hasLastNewPacketIndex = false;
+    m_lastNewPacketIndex = 0;
     m_connState = ConnectionState::Connecting;
     emit connectionStateChanged(m_connState);
 
@@ -95,10 +127,13 @@ void DeviceManager::connectToDevice(const QString &host, quint16 port)
     m_socket->connectToHost(host, port);
 }
 
+// 断开与设备连接
 void DeviceManager::disconnectFromDevice()
 {
     // 主动断开时也清掉缓冲，防止下次连接误用旧字节流。
     m_receiveBuffer.clear();
+    m_hasLastNewPacketIndex = false;
+    m_lastNewPacketIndex = 0;
 
     if (m_socket->state() == QAbstractSocket::UnconnectedState) {
         if (m_connState != ConnectionState::Disconnected) {
@@ -114,6 +149,7 @@ void DeviceManager::disconnectFromDevice()
     }
 }
 
+// 发送DA配置
 bool DeviceManager::sendDaConfig(const QVector<DaChannelConfig> &channels)
 {
     // 先做连接态与参数完整性校验，再进入协议打包阶段。
@@ -138,6 +174,7 @@ bool DeviceManager::sendDaConfig(const QVector<DaChannelConfig> &channels)
     return m_socket->waitForBytesWritten(1000);
 }
 
+/*
 QVector<DaChannelConfig> DeviceManager::defaultDaConfig() const
 {
     // 这里保留 Python da_ch_conf_ref 的 V2.0 默认映射顺序。
@@ -161,7 +198,9 @@ QVector<DaChannelConfig> DeviceManager::defaultDaConfig() const
         {13, 1, 10000, 180, 60}
     };
 }
+*/
 
+// 发送采样率配置
 bool DeviceManager::sendSampleRateConfig(SampleRate rate)
 {
     // 采样率被收敛为枚举，避免外部传入协议不支持的值。
@@ -170,8 +209,8 @@ bool DeviceManager::sendSampleRateConfig(SampleRate rate)
         return false;
     }
 
-    const QByteArray frame = buildSampleRateFrame(rate);
-    const qint64 written = m_socket->write(frame);
+    const QByteArray frame = buildSampleRateFrame(rate);         // 构建采样率配置帧
+    const qint64 written = m_socket->write(frame);               // 写入数据到socket缓冲区
     if (written != frame.size()) {
         emit errorOccurred(QStringLiteral("采样率配置发送失败。"));
         return false;
@@ -180,6 +219,7 @@ bool DeviceManager::sendSampleRateConfig(SampleRate rate)
     return m_socket->waitForBytesWritten(1000);
 }
 
+// 开启采样操作
 bool DeviceManager::startSampling()
 {
     // 启动命令应在完成连接、DA 参数设置、AD 采样率设置之后再调用。
@@ -189,21 +229,23 @@ bool DeviceManager::startSampling()
     }
 
     const QByteArray frame = buildStartSampleFrame();
-    const qint64 written = m_socket->write(frame);
-    if (written != frame.size()) {
+    const qint64 written = m_socket->write(frame);      // 获取实际写入的数据量
+    if (written != frame.size()) {                      // 如果写入数据量不相同，则代表数据发送失败
         emit errorOccurred(QStringLiteral("启动采样命令发送失败。"));
         return false;
     }
 
-    return m_socket->waitForBytesWritten(1000);
+    return m_socket->waitForBytesWritten(1000);         // 等待数据发送完成，超时时间1000ms
 }
 
+/*
 QVector<AdcChannelData> DeviceManager::getAdcData() const
 {
     QMutexLocker locker(&m_dataMutex);
-    return m_adcData;
+    return  m_adcData;
 }
 
+// 计算峰峰值
 QVector<float> DeviceManager::calcVpp() const
 {
     // 取最近一帧完整数据做计算，避免直接操作共享成员造成竞争。
@@ -234,6 +276,7 @@ QVector<float> DeviceManager::calcVpp() const
     return reordered;
 }
 
+// 按照python的方式计算灵敏度
 QVector<float> DeviceManager::calcSensitivity(const QVector<float> &baseline) const
 {
     // 灵敏度定义与 Python 版本一致：
@@ -260,7 +303,9 @@ QVector<float> DeviceManager::calcSensitivity(const QVector<float> &baseline) co
 
     return sensitivity;
 }
+*/
 
+// socket连接成功，更新标志位 
 void DeviceManager::onConnected()
 {
     // 只维护状态并发信号，把 UI 表现留给上层。
@@ -268,12 +313,14 @@ void DeviceManager::onConnected()
     emit connectionStateChanged(m_connState);
 }
 
+// socket连接断开，更新标志位 
 void DeviceManager::onDisconnected()
 {
     m_connState = ConnectionState::Disconnected;
     emit connectionStateChanged(m_connState);
 }
 
+// socket错误，更新标志位 
 void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
@@ -283,6 +330,7 @@ void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
     emit errorOccurred(m_socket->errorString());
 }
 
+// 旧版的数据接收解析方式
 void DeviceManager::onDataReceived()
 {
     // readyRead 可能一次收到半帧、一帧或多帧，因此先追加到缓冲区统一处理。
@@ -324,6 +372,179 @@ void DeviceManager::onDataReceived()
         m_receiveBuffer.remove(0, ADC_FRAME_SIZE);
         emit adcDataReady(getAdcData());
     }
+}
+
+// AD7768 版本数据接收解析。
+// readyRead 触发时拿到的是 TCP 字节流片段，可能出现半包、粘包或包头前有残留脏数据；
+// 因此这里先追加到 m_receiveBuffer，再从缓冲区里按“包头 + 长度字段”逐包拆解。
+void DeviceManager::onDataReceived_New()
+{
+    // 把本次 socket 已到达的所有字节追加到缓存中。
+    // 注意 readAll() 不保证刚好等于一个完整 AD7768 数据包。
+    m_receiveBuffer.append(m_socket->readAll());
+
+    // 一次 readyRead 里可能已经收到了多个完整包，所以这里持续尝试解析。
+    // 直到缓存中找不到包头，或者只剩下一个未收完整的包，才退出等待下一次 readyRead。
+    while (true) {
+        // 新协议包头固定为 55 aa 55 aa，小端读取后对应 id0 = 0xAA55AA55。
+        const int headerIndex = m_receiveBuffer.indexOf(kAd7768PacketHeaderBytes);
+        if (headerIndex < 0) {
+            // 当前缓存里还没有完整包头。
+            // 但包头可能被截断在缓存末尾，例如只收到 55 aa 55，
+            // 所以最多保留包头长度 - 1 个字节，用于和下一次 readAll() 拼接。
+            if (m_receiveBuffer.size() > kAd7768PacketHeaderBytes.size() - 1) {
+                m_receiveBuffer = m_receiveBuffer.right(kAd7768PacketHeaderBytes.size() - 1);
+            }
+            break;
+        }
+
+        if (headerIndex > 0) {
+            // 丢弃包头前面的脏数据或上一次异常解析留下的残余字节，使缓存从包头开始。
+            m_receiveBuffer.remove(0, headerIndex);
+        }
+
+        if (m_receiveBuffer.size() < kAd7768PacketHeaderSize) {
+            // 已经找到包头，但 16 字节包头还没收完整，等待后续数据。
+            break;
+        }
+
+        const char *header = m_receiveBuffer.constData();
+        // 包头结构：
+        // id0          固定同步字 0xAA55AA55
+        // id1          包类型：锁相结果包或原始 ADC 包
+        // packetIndex  包序号，用于检测丢包
+        // payloadLength 后续 payload 字节数
+        const quint32 id0 = readUInt32LE(header);
+        const quint32 id1 = readUInt32LE(header + 4);
+        const quint32 packetIndex = readUInt32LE(header + 8);
+        const quint32 payloadLength = readUInt32LE(header + 12);
+
+        if (id0 != kAd7768PacketId0) {
+            // 理论上 indexOf 已经匹配了包头；这里再校验一次，异常时滑动 1 字节重新同步。
+            m_receiveBuffer.remove(0, 1);
+            continue;
+        }
+
+        if (id1 != kAd7768LockinPacketId && id1 != kAd7768RawAdcPacketId) {
+            emit errorOccurred(QStringLiteral("AD7768 上传包类型未知：0x%1")
+                                   .arg(id1, 8, 16, QLatin1Char('0')));
+            m_receiveBuffer.remove(0, 1);
+            continue;
+        }
+
+        if (payloadLength > static_cast<quint32>(kAd7768MaxPayloadBytes)) {
+            // 长度字段异常通常表示数据流已经错位，避免按错误长度申请或等待超大数据。
+            emit errorOccurred(QStringLiteral("AD7768 payload 过大：%1 字节").arg(payloadLength));
+            m_receiveBuffer.remove(0, 1);
+            continue;
+        }
+
+        const int totalLength = kAd7768PacketHeaderSize + static_cast<int>(payloadLength);
+        if (m_receiveBuffer.size() < totalLength) {
+            // 包头已完整，但 payload 还没收全；保留当前缓存，下一次 readyRead 后继续解析。
+            break;
+        }
+
+        // 到这里说明已经拿到一个完整 AD7768 包，可以把 payload 交给业务解析函数。
+        const QByteArray payload = m_receiveBuffer.mid(kAd7768PacketHeaderSize,
+                                                       static_cast<int>(payloadLength));
+        bool parsed = false;
+        if (id1 == kAd7768LockinPacketId) {      // 锁相包
+            parsed = parseLockinPacket_New(payload, packetIndex);
+        } else {                                 // 原始包
+            parsed = parseRawAdcPacket_New(payload, packetIndex);
+        }
+
+        if (parsed) {
+            checkPacketIndex_New(packetIndex);
+        }
+
+        // 这里已经按包头长度字段拿到完整包；无论业务解析是否通过，都消费掉该包。
+        m_receiveBuffer.remove(0, totalLength);
+    }
+}
+
+// 解析锁相包
+bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 packetIndex)
+{
+    if (payload.size() % kAd7768LockinFrameBytes != 0) {
+        emit errorOccurred(QStringLiteral("锁相包长度非法：%1 字节").arg(payload.size()));
+        return false;
+    }
+
+    const int frameCount = payload.size() / kAd7768LockinFrameBytes;
+    QVector<LockinFrameData> frames;
+    frames.reserve(frameCount);
+
+    const char *raw = payload.constData();
+    for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
+        LockinFrameData frame;
+        frame.channels.reserve(kAd7768Channels);
+
+        const int frameOffset = frameIndex * kAd7768LockinFrameBytes;
+        for (int channel = 0; channel < kAd7768Channels; ++channel) {
+            const int channelOffset = frameOffset + channel * 8;
+            const qint32 ampRaw = readInt32LE(raw + channelOffset);
+            const qint32 phaseRaw = readInt32LE(raw + channelOffset + 4);
+
+            LockinChannelData channelData;
+            channelData.ch = channel + 1;
+            channelData.ampMv = static_cast<float>(ampRaw) / 100.0f;
+            channelData.phaseDeg = static_cast<float>(phaseRaw) / 100.0f;
+            channelData.vppMv = channelData.ampMv * 2.0f;
+            frame.channels.append(channelData);
+        }
+
+        frames.append(frame);
+    }
+
+    emit lockinDataReady(packetIndex, frames);
+    return true;
+}
+
+// 解析原始ADC波形包
+bool DeviceManager::parseRawAdcPacket_New(const QByteArray &payload, quint32 packetIndex)
+{
+    if (payload.size() % kAd7768RawSampleBytes != 0) {
+        emit errorOccurred(QStringLiteral("原始 ADC 包长度非法：%1 字节").arg(payload.size()));
+        return false;
+    }
+
+    const int sampleCount = payload.size() / kAd7768RawSampleBytes;
+    QVector<RawAdcChannelData> channels(kAd7768Channels);
+    for (int channel = 0; channel < kAd7768Channels; ++channel) {
+        channels[channel].ch = channel + 1;
+        channels[channel].adcCodes.reserve(sampleCount);
+        channels[channel].voltageMv.reserve(sampleCount);
+    }
+
+    const char *raw = payload.constData();
+    for (int sample = 0; sample < sampleCount; ++sample) {
+        const int sampleOffset = sample * kAd7768RawSampleBytes;
+        for (int channel = 0; channel < kAd7768Channels; ++channel) {
+            const int byteOffset = sampleOffset + channel * 4;
+            const qint32 adcCode = readInt32LE(raw + byteOffset);
+            const double voltageMv = static_cast<double>(adcCode) * 4096.0 / 8388607.0;
+
+            channels[channel].adcCodes.append(adcCode);
+            channels[channel].voltageMv.append(voltageMv);
+        }
+    }
+
+    emit rawAdcDataReady(packetIndex, channels);
+    return true;
+}
+
+void DeviceManager::checkPacketIndex_New(quint32 packetIndex)
+{
+    if (m_hasLastNewPacketIndex && packetIndex != m_lastNewPacketIndex + 1) {
+        emit errorOccurred(QStringLiteral("AD7768 上传包序号跳变：上一包 %1，当前包 %2")
+                               .arg(m_lastNewPacketIndex)
+                               .arg(packetIndex));
+    }
+
+    m_hasLastNewPacketIndex = true;
+    m_lastNewPacketIndex = packetIndex;
 }
 
 QByteArray DeviceManager::buildDaFrame(const QVector<DaChannelConfig> &channels) const
@@ -417,14 +638,14 @@ bool DeviceManager::parseAdcFrame(const QByteArray &frame)
     return true;
 }
 
-float DeviceManager::computeChannelVpp(const QVector<quint16> &samples) const
+float DeviceManager::computeChannelVpp(const QVector<quint32> &samples) const
 {
     if (samples.isEmpty()) {
         return 0.0f;
     }
 
     // 通过排序后取最大 5 点均值和最小 5 点均值，较单纯 max-min 更抗孤立尖峰噪声。
-    QVector<quint16> sorted = samples;
+    QVector<quint32> sorted = samples;
     std::sort(sorted.begin(), sorted.end());
 
     const int sampleCount = std::min(5,  static_cast<int>(sorted.size()));

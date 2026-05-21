@@ -30,12 +30,15 @@ Probe::Probe(int probeId, int hardwareChannel, QObject *parent)
       m_hwChannel(hardwareChannel),
       m_name(QStringLiteral("探头-%1").arg(probeId + 1))
 {
-    m_rawData.fill(0, DeviceManager::ADC_SAMPLES_PER_CH);
+    m_rawData.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    m_rawData_amp.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    m_rawData_phase.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
 }
 
+// 设置对应的硬件通道，按照该硬件通道读取数据
 void Probe::setHardwareChannel(int channel)
 {
-    m_hwChannel = channel;
+    m_hwChannel = channel;   
 }
 
 /**
@@ -70,7 +73,7 @@ DaChannelConfig Probe::toDaChannelConfig() const
 /**
  * @brief 获取最近一次写入的原始 ADC 数据
  */
-QVector<quint16> Probe::rawData() const
+QVector<quint32> Probe::rawData() const
 {
     return m_rawData;
 }
@@ -81,7 +84,7 @@ QVector<quint16> Probe::rawData() const
  *
  * 若数据长度异常，则标记故障状态；否则更新数据并通知界面刷新。
  */
-void Probe::setRawData(const QVector<quint16> &data)
+void Probe::setRawData(const QVector<quint32> &data)
 {
     if (data.size() != DeviceManager::ADC_SAMPLES_PER_CH) {
         if (!m_hasFault) {

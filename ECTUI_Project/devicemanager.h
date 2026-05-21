@@ -4,7 +4,7 @@
  * @Author: June0821
  * @Date: 2025-10-15 15:41:10
  * @LastEditors: June0821
- * @LastEditTime: 2026-04-01 00:00:00
+ * @LastEditTime: 2026-05-19 00:07:48
  */
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
@@ -45,13 +45,45 @@ struct DaChannelConfig {
 struct AdcChannelData {
     int ch;
     int index;
-    QVector<quint16> data; // 固定 512 点
+    QVector<quint32> data; // 固定 512 点
+};
+
+/**
+ * @brief AD7768 新协议：单通道锁相结果
+ */
+struct LockinChannelData {
+    int ch;
+    float ampMv;
+    float phaseDeg;
+    float vppMv;
+};
+
+/**
+ * @brief AD7768 新协议：一帧锁相结果，包含 8 个通道
+ */
+struct LockinFrameData {
+    QVector<LockinChannelData> channels;
+};
+
+/**
+ * @brief AD7768 新协议：单通道原始 ADC 波形
+ */
+struct RawAdcChannelData {
+    int ch;
+    QVector<qint32> adcCodes;
+    QVector<double> voltageMv;
 };
 
 // 让自定义数据类型可以通过 Qt 信号槽跨线程/排队连接传递。
 // 后续若 MainWindow 与 DeviceManager 不在同一线程，adcDataReady 仍可正常工作。
 Q_DECLARE_METATYPE(AdcChannelData)
 Q_DECLARE_METATYPE(QVector<AdcChannelData>)
+Q_DECLARE_METATYPE(LockinChannelData)
+Q_DECLARE_METATYPE(QVector<LockinChannelData>)
+Q_DECLARE_METATYPE(LockinFrameData)
+Q_DECLARE_METATYPE(QVector<LockinFrameData>)
+Q_DECLARE_METATYPE(RawAdcChannelData)
+Q_DECLARE_METATYPE(QVector<RawAdcChannelData>)
 
 // ─────────────────────────────────────────────
 //  枚举
@@ -87,11 +119,12 @@ class DeviceManager : public QObject
 public:
     // 协议中 ADC 固定为 16 通道，每通道固定 512 个点。
     // 当前实现严格按旧版 Python 协议写死，后续若下位机协议升级，可优先改这几项常量。
-    static constexpr int ADC_CHANNELS        = 16;
-    static constexpr int ADC_SAMPLES_PER_CH  = 512;
-    static constexpr int ADC_FRAME_SIZE      = 16460;  // 总帧长（字节）
-    static constexpr int DA_CHANNELS         = 16;
-    static constexpr int DA_MAX_AMP          = 60;     // 幅度上限（%）
+    static constexpr int ADC_CHANNELS               = 16;
+    static constexpr int ADC_SAMPLES_buffer_PER_CH  = 100000;   
+    static constexpr int ADC_SAMPLES_PER_CH         = 512;
+    static constexpr int ADC_FRAME_SIZE             = 16460;  // 总帧长（字节）
+    static constexpr int DA_CHANNELS                = 16;
+    static constexpr int DA_MAX_AMP                 = 60;     // 幅度上限（%）
 
     explicit DeviceManager(QObject *parent = nullptr);
     ~DeviceManager();
@@ -170,12 +203,19 @@ signals:
     /** 发生错误 */
     void errorOccurred(const QString &msg);
 
+    /** AD7768 新协议：收到锁相结果包 */
+    void lockinDataReady(quint32 packetIndex, QVector<LockinFrameData> frames);
+
+    /** AD7768 新协议：收到原始 ADC 波形包 */
+    void rawAdcDataReady(quint32 packetIndex, QVector<RawAdcChannelData> channels);
+
 private slots:
     // socket 状态变化统一收敛到这些槽中，避免 MainWindow 直接操作底层 QTcpSocket。
     void onConnected();
     void onDisconnected();
     void onSocketError(QAbstractSocket::SocketError error);
     void onDataReceived();
+    void onDataReceived_New();
 
 private:
     // ── 帧打包辅助 ────────────────────────────
@@ -202,16 +242,23 @@ private:
      */
     bool parseAdcFrame(const QByteArray &frame);
 
+    // ── AD7768 新协议解析辅助 ─────────────────
+    bool parseLockinPacket_New(const QByteArray &payload, quint32 packetIndex);
+    bool parseRawAdcPacket_New(const QByteArray &payload, quint32 packetIndex);
+    void checkPacketIndex_New(quint32 packetIndex);
+
     // ── Vpp 计算辅助 ──────────────────────────
     // 对单通道 512 点数据计算 Vpp。
     // 这里沿用 Python 版策略：取最大 5 点均值减最小 5 点均值，降低尖峰噪声影响。
-    float computeChannelVpp(const QVector<quint16> &samples) const;
+    float computeChannelVpp(const QVector<quint32> &samples) const;
 
     // ── 成员 ──────────────────────────────────
     // 唯一的底层通信对象，DeviceManager 对外隐藏 socket 细节。
     QTcpSocket       *m_socket;
     ConnectionState   m_connState;
     QByteArray        m_receiveBuffer;    // TCP 粘包/半包缓冲
+    bool              m_hasLastNewPacketIndex = false;
+    quint32           m_lastNewPacketIndex = 0;
 
     // m_adcData 由 readyRead 回调写入，也可能被 UI 或算法线程读取，因此加锁保护。
     mutable QMutex    m_dataMutex;

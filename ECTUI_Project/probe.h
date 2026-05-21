@@ -43,7 +43,7 @@ public:
     DaChannelConfig toDaChannelConfig() const;
 
     // ── 3. 实时采集数据 ─────────────────────
-    QVector<quint16> rawData() const;
+    QVector<quint32> rawData() const;
     void setRawData(const QVector<quint16> &data);
     QDateTime lastUpdateTime() const { return m_lastUpdateTime; }
 
@@ -91,7 +91,9 @@ private:
     int m_excitationAmp = 60;       ///< 激励幅度 (%)
 
     // === 3. 实时数据 ===
-    QVector<quint16> m_rawData;     ///< 原始 ADC 采样值
+    QVector<quint32> m_rawData;           ///< 原始 ADC 采样值
+    QVector<quint32> m_rawData_amp;       ///< 原始数据的幅值
+    QVector<quint32> m_rawData_phase;     ///< 原始数据的相位
     QDateTime m_lastUpdateTime;     ///< 最近一次数据更新时间
 
     // === 4. 计算结果 ===

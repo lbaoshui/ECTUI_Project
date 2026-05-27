@@ -44,7 +44,7 @@ public:
 
     // ── 3. 实时采集数据 ─────────────────────
     QVector<quint32> rawData() const;
-    void setRawData(const QVector<quint16> &data);
+    void setRawData(const QVector<quint32> &data);
     QDateTime lastUpdateTime() const { return m_lastUpdateTime; }
 
     // ── 4. 计算结果 ─────────────────────────

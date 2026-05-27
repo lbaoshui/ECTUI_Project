@@ -189,7 +189,7 @@ float Probe::computeVppInternal() const
         return 0.0f;
     }
 
-    QVector<quint16> sorted = m_rawData;
+    QVector<quint32> sorted = m_rawData;
     std::sort(sorted.begin(), sorted.end());
 
     const int sampleCount = std::min(5, static_cast<int>(sorted.size()));

@@ -6,6 +6,7 @@
 #include <QtEndian>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -84,6 +85,8 @@ DeviceManager::DeviceManager(QObject *parent)
     qRegisterMetaType<QVector<LockinFrameData>>("QVector<LockinFrameData>");
     qRegisterMetaType<RawAdcChannelData>("RawAdcChannelData");
     qRegisterMetaType<QVector<RawAdcChannelData>>("QVector<RawAdcChannelData>");
+    qRegisterMetaType<BufferedLockinPacket>("BufferedLockinPacket");
+    qRegisterMetaType<BufferedRawAdcPacket>("BufferedRawAdcPacket");
 
     // 统一在 DeviceManager 内部处理 socket 生命周期与事件分发。  
     connect(m_socket, &QTcpSocket::connected, this, &DeviceManager::onConnected);           // socket连接成功，更新标志位 
@@ -116,9 +119,7 @@ void DeviceManager::connectToDevice(const QString &host, quint16 port)
     }
 
     // 每次重新连接前清空旧接收缓冲，避免把上一次残留数据误判为新帧。
-    m_receiveBuffer.clear();
-    m_hasLastNewPacketIndex = false;
-    m_lastNewPacketIndex = 0;
+    resetStreamingState();
     m_connState = ConnectionState::Connecting;
     emit connectionStateChanged(m_connState);
 
@@ -131,9 +132,7 @@ void DeviceManager::connectToDevice(const QString &host, quint16 port)
 void DeviceManager::disconnectFromDevice()
 {
     // 主动断开时也清掉缓冲，防止下次连接误用旧字节流。
-    m_receiveBuffer.clear();
-    m_hasLastNewPacketIndex = false;
-    m_lastNewPacketIndex = 0;
+    resetStreamingState();
 
     if (m_socket->state() == QAbstractSocket::UnconnectedState) {
         if (m_connState != ConnectionState::Disconnected) {
@@ -316,6 +315,7 @@ void DeviceManager::onConnected()
 // socket连接断开，更新标志位 
 void DeviceManager::onDisconnected()
 {
+    resetStreamingState();
     m_connState = ConnectionState::Disconnected;
     emit connectionStateChanged(m_connState);
 }
@@ -325,11 +325,13 @@ void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
     // 一旦 socket 出错，统一回到断开态，避免上层继续认为连接可用。
+    resetStreamingState();
     m_connState = ConnectionState::Disconnected;
     emit connectionStateChanged(m_connState);
     emit errorOccurred(m_socket->errorString());
 }
 
+/*
 // 旧版的数据接收解析方式
 void DeviceManager::onDataReceived()
 {
@@ -373,6 +375,7 @@ void DeviceManager::onDataReceived()
         emit adcDataReady(getAdcData());
     }
 }
+*/
 
 // AD7768 版本数据接收解析。
 // readyRead 触发时拿到的是 TCP 字节流片段，可能出现半包、粘包或包头前有残留脏数据；
@@ -467,11 +470,13 @@ void DeviceManager::onDataReceived_New()
 // 解析锁相包
 bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 packetIndex)
 {
+    // 锁相 payload 必须按 64 字节/帧对齐，否则说明包长度或字节流同步异常。
     if (payload.size() % kAd7768LockinFrameBytes != 0) {
         emit errorOccurred(QStringLiteral("锁相包长度非法：%1 字节").arg(payload.size()));
         return false;
     }
 
+    // 一个 payload 里可能包含多帧锁相结果，例如 128 字节 = 2 帧。
     const int frameCount = payload.size() / kAd7768LockinFrameBytes;
     QVector<LockinFrameData> frames;
     frames.reserve(frameCount);
@@ -481,6 +486,7 @@ bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 pac
         LockinFrameData frame;
         frame.channels.reserve(kAd7768Channels);
 
+        // 每帧 64 字节，按 CH1..CH8 顺序排列，每通道 8 字节：amp(int32) + phase(int32)。
         const int frameOffset = frameIndex * kAd7768LockinFrameBytes;
         for (int channel = 0; channel < kAd7768Channels; ++channel) {
             const int channelOffset = frameOffset + channel * 8;
@@ -489,8 +495,10 @@ bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 pac
 
             LockinChannelData channelData;
             channelData.ch = channel + 1;
+            // 下位机以 x100 定点上传，上位机除以 100 还原为 mV / 度。
             channelData.ampMv = static_cast<float>(ampRaw) / 100.0f;
             channelData.phaseDeg = static_cast<float>(phaseRaw) / 100.0f;
+            // 当前 UI 约定：峰峰值按 Vpp = 2 * 幅值估算。
             channelData.vppMv = channelData.ampMv * 2.0f;
             frame.channels.append(channelData);
         }
@@ -498,7 +506,12 @@ bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 pac
         frames.append(frame);
     }
 
-    emit lockinDataReady(packetIndex, frames);
+    BufferedLockinPacket packet;
+    packet.packetIndex = packetIndex;
+    packet.frames = std::move(frames);
+
+    emit lockinDataReady(packetIndex, packet.frames);
+    m_lockinBuffer.push(std::move(packet));            // 将锁相包推入缓冲池
     return true;
 }
 
@@ -531,7 +544,12 @@ bool DeviceManager::parseRawAdcPacket_New(const QByteArray &payload, quint32 pac
         }
     }
 
-    emit rawAdcDataReady(packetIndex, channels);
+    BufferedRawAdcPacket packet;
+    packet.packetIndex = packetIndex;
+    packet.channels = std::move(channels);
+
+    emit rawAdcDataReady(packetIndex, packet.channels);
+    m_rawAdcBuffer.push(std::move(packet));
     return true;
 }
 
@@ -545,6 +563,15 @@ void DeviceManager::checkPacketIndex_New(quint32 packetIndex)
 
     m_hasLastNewPacketIndex = true;
     m_lastNewPacketIndex = packetIndex;
+}
+
+void DeviceManager::resetStreamingState()
+{
+    m_receiveBuffer.clear();
+    m_hasLastNewPacketIndex = false;
+    m_lastNewPacketIndex = 0;
+    m_lockinBuffer.clear();
+    m_rawAdcBuffer.clear();
 }
 
 QByteArray DeviceManager::buildDaFrame(const QVector<DaChannelConfig> &channels) const
@@ -663,4 +690,52 @@ float DeviceManager::computeChannelVpp(const QVector<quint32> &samples) const
 
     // 转成物理量，单位与旧版 Python 实现保持一致。
     return rawVpp * kVppScale;
+}
+
+// 批量取出锁大包，取走即从池中删除。调用者获得帧所有权。
+QVector<BufferedLockinPacket> DeviceManager::takeLockinPackets(int maxCount)
+{
+    return m_lockinBuffer.take(maxCount);
+}
+
+// 批量取出 RawADC 包，取走即从池中删除。调用者获得帧所有权。
+QVector<BufferedRawAdcPacket> DeviceManager::takeRawAdcPackets(int maxCount)
+{
+    return m_rawAdcBuffer.take(maxCount);
+}
+
+// 读取最新一帧锁大包，不删除。适合 UI 定时器轮询。
+bool DeviceManager::latestLockinPacket(BufferedLockinPacket *out) const
+{
+    return m_lockinBuffer.latest(out);
+}
+
+// 读取最新一帧 RawADC 包，不删除。适合 UI 定时器轮询。
+bool DeviceManager::latestRawAdcPacket(BufferedRawAdcPacket *out) const
+{
+    return m_rawAdcBuffer.latest(out);
+}
+
+// 当前缓冲池中未取走的锁大包数量。
+int DeviceManager::lockinPacketCount() const
+{
+    return m_lockinBuffer.size();
+}
+
+// 当前缓冲池中未取走的 RawADC 包数量。
+int DeviceManager::rawAdcPacketCount() const
+{
+    return m_rawAdcBuffer.size();
+}
+
+// 清空锁大缓冲池，重置所有槽位。调用期间不应与 push 并发。
+void DeviceManager::clearLockinPackets()
+{
+    m_lockinBuffer.clear();
+}
+
+// 清空 RawADC 缓冲池，重置所有槽位。调用期间不应与 push 并发。
+void DeviceManager::clearRawAdcPackets()
+{
+    m_rawAdcBuffer.clear();
 }

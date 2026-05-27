@@ -4,10 +4,12 @@
  * @Author: June0821
  * @Date: 2025-10-15 15:41:10
  * @LastEditors: June0821
- * @LastEditTime: 2026-05-19 00:07:48
+ * @LastEditTime: 2026-05-27 23:41:51
  */
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
+
+#include "framebuffer.h"
 
 #include <QObject>
 #include <QTcpSocket>
@@ -74,6 +76,22 @@ struct RawAdcChannelData {
     QVector<double> voltageMv;
 };
 
+/**
+ * @brief 缓冲池中的锁相包条目
+ */
+struct BufferedLockinPacket {
+    quint32 packetIndex = 0;
+    QVector<LockinFrameData> frames;
+};
+
+/**
+ * @brief 缓冲池中的原始 ADC 包条目
+ */
+struct BufferedRawAdcPacket {
+    quint32 packetIndex = 0;
+    QVector<RawAdcChannelData> channels;
+};
+
 // 让自定义数据类型可以通过 Qt 信号槽跨线程/排队连接传递。
 // 后续若 MainWindow 与 DeviceManager 不在同一线程，adcDataReady 仍可正常工作。
 Q_DECLARE_METATYPE(AdcChannelData)
@@ -84,6 +102,8 @@ Q_DECLARE_METATYPE(LockinFrameData)
 Q_DECLARE_METATYPE(QVector<LockinFrameData>)
 Q_DECLARE_METATYPE(RawAdcChannelData)
 Q_DECLARE_METATYPE(QVector<RawAdcChannelData>)
+Q_DECLARE_METATYPE(BufferedLockinPacket)
+Q_DECLARE_METATYPE(BufferedRawAdcPacket)
 
 // ─────────────────────────────────────────────
 //  枚举
@@ -117,14 +137,15 @@ class DeviceManager : public QObject
     Q_OBJECT
 
 public:
-    // 协议中 ADC 固定为 16 通道，每通道固定 512 个点。
-    // 当前实现严格按旧版 Python 协议写死，后续若下位机协议升级，可优先改这几项常量。
+    // 协议常量
     static constexpr int ADC_CHANNELS               = 16;
     static constexpr int ADC_SAMPLES_buffer_PER_CH  = 100000;   
     static constexpr int ADC_SAMPLES_PER_CH         = 512;
     static constexpr int ADC_FRAME_SIZE             = 16460;  // 总帧长（字节）
     static constexpr int DA_CHANNELS                = 16;
     static constexpr int DA_MAX_AMP                 = 60;     // 幅度上限（%）
+    static constexpr int LOCKIN_BUFFER_CAPACITY     = 2048; // 锁相包缓冲池容量（帧）
+    static constexpr int RAW_ADC_BUFFER_CAPACITY    = 2048;   // 原始 ADC 包缓冲池容量（帧）
 
     explicit DeviceManager(QObject *parent = nullptr);
     ~DeviceManager();
@@ -188,6 +209,16 @@ public:
      */
     QVector<float> calcSensitivity(const QVector<float> &baseline) const;
 
+    // ── AD7768 缓冲池读取（消费者线程调用，无锁） ──
+    QVector<BufferedLockinPacket> takeLockinPackets(int maxCount);
+    QVector<BufferedRawAdcPacket> takeRawAdcPackets(int maxCount);
+    bool latestLockinPacket(BufferedLockinPacket *out) const;
+    bool latestRawAdcPacket(BufferedRawAdcPacket *out) const;
+    int lockinPacketCount() const;
+    int rawAdcPacketCount() const;
+    void clearLockinPackets();
+    void clearRawAdcPackets();
+
 signals:
     /** 连接状态变化 */
     void connectionStateChanged(ConnectionState state);
@@ -246,6 +277,7 @@ private:
     bool parseLockinPacket_New(const QByteArray &payload, quint32 packetIndex);
     bool parseRawAdcPacket_New(const QByteArray &payload, quint32 packetIndex);
     void checkPacketIndex_New(quint32 packetIndex);
+    void resetStreamingState();
 
     // ── Vpp 计算辅助 ──────────────────────────
     // 对单通道 512 点数据计算 Vpp。
@@ -263,6 +295,10 @@ private:
     // m_adcData 由 readyRead 回调写入，也可能被 UI 或算法线程读取，因此加锁保护。
     mutable QMutex    m_dataMutex;
     QVector<AdcChannelData> m_adcData;   // 最近一帧数据
+
+    // AD7768 新协议：两个独立的无锁有界环形缓冲池
+    SpscFrameBuffer<BufferedLockinPacket> m_lockinBuffer{LOCKIN_BUFFER_CAPACITY};
+    SpscFrameBuffer<BufferedRawAdcPacket> m_rawAdcBuffer{RAW_ADC_BUFFER_CAPACITY};
 
     // 协议常量（帧头/命令字节）
     // 这些字节序列完全对应 Python adda_parser 中的固定命令。

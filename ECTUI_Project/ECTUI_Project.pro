@@ -24,6 +24,7 @@ SOURCES += \
 HEADERS += \
     customplot.h \
     devicemanager.h \
+    framebuffer.h \
     mainwindow.h \
     probe.h \
     probemanager.h \

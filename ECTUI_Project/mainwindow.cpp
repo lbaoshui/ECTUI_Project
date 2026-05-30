@@ -1164,24 +1164,104 @@ void MainWindow::connectToRemoteDevice()
 {
     QDialog dialog(this);
     dialog.setWindowTitle(tr("连接下位机设备"));
+    dialog.setMinimumSize(400, 160);
+    dialog.resize(400, 200);
+
+    constexpr int kFieldHeight = 32;
+    constexpr int kFieldMinWidth = 200;
+    constexpr int kButtonHeight = 32;
+    constexpr int kButtonMinWidth = 100;
+
+    dialog.setStyleSheet(
+        "QDialog { background-color: #1e1e1e; }"
+        "QLabel { color: #cccccc; font-size: 13px; background: transparent; border: none; }"
+        "QLineEdit {"
+        "    background-color: #2d2d30; color: #ffffff; border: 1px solid #3c3c3c;"
+        "    border-radius: 3px; padding: 4px 8px; font-size: 13px;"
+        "}"
+        "QSpinBox {"
+        "    background-color: #2d2d30; color: #ffffff; border: 1px solid #3c3c3c;"
+        "    border-radius: 3px; padding-left: 8px; padding-right: 22px; font-size: 13px;"
+        "}"
+        "QSpinBox::up-button {"
+        "    subcontrol-origin: border; subcontrol-position: top right;"
+        "    width: 22px; height: 14px; background-color: #3c3c3c;"
+        "    border-left: 1px solid #555; border-top-right-radius: 2px;"
+        "}"
+        "QSpinBox::down-button {"
+        "    subcontrol-origin: border; subcontrol-position: bottom right;"
+        "    width: 22px; height: 14px; background-color: #3c3c3c;"
+        "    border-left: 1px solid #555; border-bottom-right-radius: 2px;"
+        "}"
+        "QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: #0e639c; }"
+        "QSpinBox::up-arrow {"
+        "    width: 8px; height: 8px;"
+        "}"
+        "QSpinBox::down-arrow {"
+        "    width: 8px; height: 8px;"
+        "}"
+        "QPushButton {"
+        "    background-color: #0e639c; color: white; border: 1px solid #3c3c3c;"
+        "    border-radius: 3px; padding: 6px 14px; font-size: 13px; font-weight: bold;"
+        "}"
+        "QPushButton:hover { background-color: #1177bb; }"
+        "QPushButton:pressed { background-color: #094771; }"
+    );
 
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(20, 16, 20, 16);
+    layout->setSpacing(12);
+
     QLabel *promptLabel = new QLabel(tr("请输入下位机的 IP Address 和 Port："), &dialog);
+    promptLabel->setWordWrap(true);
+
     QFormLayout *formLayout = new QFormLayout();
+    formLayout->setContentsMargins(0, 0, 0, 0);
+    formLayout->setHorizontalSpacing(12);
+    formLayout->setVerticalSpacing(10);
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    formLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    formLayout->setFormAlignment(Qt::AlignHCenter | Qt::AlignTop);
+
     QLineEdit *ipEdit = new QLineEdit(&dialog);
     QSpinBox *portSpinBox = new QSpinBox(&dialog);
 
     ipEdit->setPlaceholderText(QStringLiteral("192.168.1.10"));
     ipEdit->setText(m_deviceHost);
+    ipEdit->setMinimumHeight(kFieldHeight);
+    ipEdit->setMinimumWidth(kFieldMinWidth);
+    ipEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
     portSpinBox->setRange(1, 65535);
     portSpinBox->setValue(m_devicePort);
+    portSpinBox->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    portSpinBox->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
+    portSpinBox->setAccelerated(true);
+    portSpinBox->setKeyboardTracking(true);
+    portSpinBox->setMinimumHeight(kFieldHeight);
+    portSpinBox->setMinimumWidth(kFieldMinWidth);
+    portSpinBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    formLayout->addRow(tr("IP Address:"), ipEdit);
-    formLayout->addRow(tr("Port:"), portSpinBox);
+    QLabel *ipLabel = new QLabel(tr("IP Address:"), &dialog);
+    QLabel *portLabel = new QLabel(tr("Port:"), &dialog);
+    ipLabel->setMinimumWidth(88);
+    portLabel->setMinimumWidth(88);
+    formLayout->addRow(ipLabel, ipEdit);
+    formLayout->addRow(portLabel, portSpinBox);
 
-    QDialogButtonBox *buttonBox = new QDialogButtonBox(Qt::Horizontal, &dialog);
-    QPushButton *connectButton = buttonBox->addButton(tr("连接设备"), QDialogButtonBox::AcceptRole);
-    buttonBox->addButton(QDialogButtonBox::Cancel);
+    QHBoxLayout *buttonRowLayout = new QHBoxLayout();
+    buttonRowLayout->setSpacing(12);
+    buttonRowLayout->addStretch();
+
+    QPushButton *connectButton = new QPushButton(tr("连接设备"), &dialog);
+    QPushButton *cancelButton = new QPushButton(tr("取消"), &dialog);
+    connectButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
+    cancelButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
+    connectButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    cancelButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    buttonRowLayout->addWidget(connectButton);
+    buttonRowLayout->addWidget(cancelButton);
 
     connect(connectButton,
             &QPushButton::clicked,
@@ -1197,11 +1277,12 @@ void MainWindow::connectToRemoteDevice()
 
                 dialog.accept();
             });
-    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
 
     layout->addWidget(promptLabel);
     layout->addLayout(formLayout);
-    layout->addWidget(buttonBox);
+    layout->addSpacing(4);
+    layout->addLayout(buttonRowLayout);
 
     if (dialog.exec() != QDialog::Accepted) {
         return;

@@ -12,6 +12,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/**
+ * @brief 构造主窗口
+ * @param parent 父控件，一般为 nullptr
+ *
+ * 创建 Ui 布局、DeviceManager，并调用 setupUI() 完成界面与图表初始化。
+ */
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -21,11 +27,20 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
 }
 
+/**
+ * @brief 析构主窗口，释放 ui 资源
+ */
 MainWindow::~MainWindow()
 {
     delete ui;
 }
 
+/**
+ * @brief 搭建主界面整体结构
+ *
+ * 设置窗口标题与暗色主题样式，按三行布局依次调用 setupFirstRow、setupSecondRow、
+ * setupThirdRow，再初始化 Tab/Stack 菜单、图表与信号槽，最后最大化显示。
+ */
 void MainWindow::setupUI()
 {
     // 设置窗口基本属性
@@ -148,6 +163,11 @@ void MainWindow::setupUI()
     // setTitleBarColor(hwnd, RGB(67, 67, 68));   // 深灰标题栏
 }
 
+/**
+ * @brief 构建第一行：参数详情区 + 模式信息区
+ *
+ * 12 个参数标签以 3×4 网格展示；右侧固定宽度显示检测模式（如 Reflection Mode）。
+ */
 void MainWindow::setupFirstRow()
 {
     // 第一行：参数详情显示 + 模式信息
@@ -244,6 +264,12 @@ void MainWindow::setupFirstRow()
     m_mainLayout->addWidget(firstRowFrame);
 }
 
+/**
+ * @brief 构建第二行：绘图区与右侧控制区
+ *
+ * 左上/右上为阻抗平面图与 A 扫时序图，左下为预留波形区；右侧为 StackedWidget
+ * 子菜单、模式标签及虚拟方向键与确认/取消按钮。
+ */
 void MainWindow::setupSecondRow()
 {
     // 第二行：四个绘图/控制区域
@@ -428,6 +454,11 @@ void MainWindow::setupSecondRow()
     m_mainLayout->addWidget(m_middleFrame);
 }
 
+/**
+ * @brief 构建第三行：连接状态栏 + 底部 Tab 菜单
+ *
+ * 显示本机 IP 与下位机连接状态（支持双击交互）；底部 Main/File/Scanners/Parameters 四个分栏。
+ */
 void MainWindow::setupThirdRow()
 {
     // 第三行：连接状态 + 四个菜单分栏
@@ -497,7 +528,11 @@ void MainWindow::setupThirdRow()
 }
 
 
-// 设备底部tabwidget的内容，由于其冗余了，所以暂时disable
+/**
+ * @brief 为底部 QTabWidget 各页填充按钮（当前已禁用）
+ *
+ * 功能已迁移至 setupStackMenuContents() 的 StackedWidget；保留空实现以便日后恢复 Tab 内按钮布局。
+ */
 void MainWindow::setupTabContents()
 {
 /*
@@ -587,7 +622,12 @@ void MainWindow::setupTabContents()
 
 }
 
-// 创建stackwidget的内容
+/**
+ * @brief 创建右侧 StackedWidget 的四个功能页
+ *
+ * 分别对应 Main（采集/校准）、File（数据/配置）、Scanners（连接/位置）、
+ * Parameters（激励/采样/增益/旋转角等），默认显示 Parameters 页（索引 3）。
+ */
 void MainWindow::setupStackMenuContents()
 {
     // 创建Main页面
@@ -709,6 +749,11 @@ void MainWindow::setupStackMenuContents()
     stack_menu->setCurrentIndex(3);
 }
 
+/**
+ * @brief 绑定 UI 控件与 DeviceManager 信号槽
+ *
+ * 连接虚拟按键、底部 Tab 切换、plot1 坐标轴变化（更新参考圆）、设备连接状态与错误提示。
+ */
 void MainWindow::setupConnections()
 {
     // 虚拟按键连接
@@ -766,6 +811,12 @@ void MainWindow::setupConnections()
             });
 }
 
+/**
+ * @brief 初始化三个 QCustomPlot 绘图区的样式与坐标轴
+ *
+ * plot1：阻抗平面（李萨如图）+ 参考圆；plot2：A 扫时序双 X 轴；plot3：预留波形区。
+ * 安装 eventFilter 以在窗口缩放时同步轴偏移与范围。
+ */
 void MainWindow::initializePlots()
 {
     // 初始化绘图区1 - 阻抗平面图（李萨如图）
@@ -985,6 +1036,10 @@ void MainWindow::initializePlots()
     m_plot2->replot();
 }
 
+/**
+ * @brief 枚举本机可用以太网 IPv4 接口
+ * @return 接口列表；优先返回名称含「以太网」/「Ethernet」的网卡，否则返回类型为 Ethernet 的网卡
+ */
 QVector<MainWindow::EthernetInterfaceInfo> MainWindow::getAvailableEthernetInterfaces() const
 {
     QVector<EthernetInterfaceInfo> preferredInterfaces;
@@ -1024,6 +1079,10 @@ QVector<MainWindow::EthernetInterfaceInfo> MainWindow::getAvailableEthernetInter
     return preferredInterfaces.isEmpty() ? fallbackInterfaces : preferredInterfaces;
 }
 
+/**
+ * @brief 获取当前应显示的本机 IPv4 地址
+ * @return 用户已选网卡的 IP；未选择时取列表首项；无可用网卡时返回 "0.0.0.0"
+ */
 QString MainWindow::getLocalIPv4Address() const
 {
     const QVector<EthernetInterfaceInfo> interfaces = getAvailableEthernetInterfaces();
@@ -1042,6 +1101,11 @@ QString MainWindow::getLocalIPv4Address() const
     return interfaces.constFirst().ipAddress;
 }
 
+/**
+ * @brief 弹出对话框供用户选择本机以太网接口
+ *
+ * 更新 m_selectedInterfaceId 后刷新顶部「本机 IP」显示（updateParameterDisplay）。
+ */
 void MainWindow::chooseLocalInterfaceIp()
 {
     const QVector<EthernetInterfaceInfo> interfaces = getAvailableEthernetInterfaces();
@@ -1090,6 +1154,12 @@ void MainWindow::chooseLocalInterfaceIp()
     updateParameterDisplay();
 }
 
+/**
+ * @brief 弹出对话框输入下位机 IP/端口并发起 TCP 连接
+ *
+ * 校验 IP 格式后调用 DeviceManager::connectToDevice；连接结果通过
+ * connectionStateChanged / errorOccurred 回调并弹出提示框。
+ */
 void MainWindow::connectToRemoteDevice()
 {
     QDialog dialog(this);
@@ -1144,6 +1214,9 @@ void MainWindow::connectToRemoteDevice()
     m_deviceManager->connectToDevice(m_deviceHost, m_devicePort);
 }
 
+/**
+ * @brief 根据 DeviceManager 连接状态刷新下位机状态标签文案
+ */
 void MainWindow::updateDeviceConnectionStatusText()
 {
     if (m_deviceHost.isEmpty()) {
@@ -1165,6 +1238,9 @@ void MainWindow::updateDeviceConnectionStatusText()
     }
 }
 
+/**
+ * @brief 刷新顶部参数栏中的本机 IP 显示
+ */
 void MainWindow::updateParameterDisplay()
 {
     // 更新连接状态中的IP信息
@@ -1172,38 +1248,46 @@ void MainWindow::updateParameterDisplay()
     m_connectionStatusLabel->setText(tr("本机IP: %1 ").arg(ip));
 }
 
-// 虚拟按键槽函数实现
+/** @brief 虚拟方向键「上」——菜单/参数导航（待实现） */
 void MainWindow::onVirtualUpClicked()
 {
     // 实现向上操作逻辑
 }
 
+/** @brief 虚拟方向键「下」——菜单/参数导航（待实现） */
 void MainWindow::onVirtualDownClicked()
 {
     // 实现向下操作逻辑
 }
 
+/** @brief 虚拟方向键「左」——菜单/参数导航（待实现） */
 void MainWindow::onVirtualLeftClicked()
 {
     // 实现向左操作逻辑
 }
 
+/** @brief 虚拟方向键「右」——菜单/参数导航（待实现） */
 void MainWindow::onVirtualRightClicked()
 {
     // 实现向右操作逻辑
 }
 
+/** @brief 确认键——应用当前菜单选择（待实现） */
 void MainWindow::onConfirmClicked()
 {
     // 实现确认操作逻辑
 }
 
+/** @brief 取消键——放弃当前操作并返回（待实现） */
 void MainWindow::onCancelClicked()
 {
     // 实现取消操作逻辑
 }
 
-//
+/**
+ * @brief 底部 Tab 切换时同步右侧 StackedWidget 页面
+ * @param index 0=Main, 1=File, 2=Scanners, 3=Parameters
+ */
 void MainWindow::onTabChanged(int index)
 {
     // 处理Tab切换逻辑，同步切换stack_menu的页面
@@ -1225,7 +1309,11 @@ void MainWindow::onTabChanged(int index)
     }
 }
 
-// 更新阻抗图的原型曲线
+/**
+ * @brief 按 plot1 当前坐标轴范围重绘阻抗平面参考圆
+ *
+ * 圆心在原点，半径取 X/Y 轴可视范围较小边的一半，随缩放/平移自动更新。
+ */
 void MainWindow::updateCircleCurve()
 {
     if (!m_circleCurve) return;
@@ -1287,6 +1375,12 @@ void MainWindow::updateCircleCurve()
     m_plot1->replot();
 }
 
+/**
+ * @brief 根据数据坐标 0 点在屏幕上的像素位置设置 plot 轴偏移
+ * @param plot 目标 QCustomPlot（通常为 m_plot1）
+ *
+ * 使坐标原点与网格零线对齐；并恢复 xAxis2 刻度线可见样式。
+ */
 void MainWindow::updateplot1_zerotickerLine(QCustomPlot* plot)
 {
     int pxY0 = m_plot1->yAxis->coordToPixel(0);   // 0 在屏幕上的 y 像素
@@ -1301,6 +1395,11 @@ void MainWindow::updateplot1_zerotickerLine(QCustomPlot* plot)
     plot->xAxis2->setBasePen(QPen(QColor("#cccccc")));
 }
 
+/**
+ * @brief plot1 尺寸变化后居中零线并按宽高比调整坐标轴范围
+ *
+ * 由 plotsize_changed 信号触发：根据控件像素宽高设置轴偏移，保持阻抗图近似正方形比例。
+ */
 void MainWindow::updateplot1_zerotickerLine_0()
 {
 /*
@@ -1343,7 +1442,11 @@ void MainWindow::updateplot1_zerotickerLine_0()
 
 }
 
-// 设置A扫实时时序图双轴线位置
+/**
+ * @brief plot2 尺寸变化后调整 A 扫图双 X 轴偏移、刻度步长与坐标范围
+ *
+ * 由 plot2size_changed 信号触发，使上下两条 X 轴与控件高度对齐。
+ */
 void MainWindow::updateplot2_Double_axis_line()
 {
     m_plot2->xAxis->setOffset(-m_plot2->size().height()/4);
@@ -1370,6 +1473,16 @@ void MainWindow::updateplot2_Double_axis_line()
 
 }
 
+/**
+ * @brief 处理主窗口内部分控件的事件过滤
+ * @param obj 事件源对象
+ * @param event Qt 事件
+ * @return 已处理返回 true，否则交给基类
+ *
+ * - 双击 m_connectionStatusLabel：选择本机以太网 IP
+ * - 双击 m_connectionStatusLabel2：连接下位机
+ * - m_plot1 / m_plot2 Resize：触发重绘并发出 plotsize_changed / plot2size_changed
+ */
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     // m_plot1->replot();

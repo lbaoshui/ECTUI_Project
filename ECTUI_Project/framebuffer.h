@@ -7,14 +7,14 @@
  *
  * 典型用法：
  * @code
- * SpscFrameBuffer<BufferedLockinPacket> lockinBuffer{1024};
+ * SpscFrameBuffer<LockinChannelPacket> lockinBuffer{1024};
  *
  * // 生产者（解析线程）
  * lockinBuffer.push(packet);
  *
  * // 消费者（计算 / UI 线程）
  * auto packets = lockinBuffer.take(100);          // 批量取，取走后从池中删除
- * BufferedLockinPacket latest;
+ * LockinChannelPacket latest;
  * if (lockinBuffer.latest(&latest)) { ... }        // 只读最新一帧，不删除
  * @endcode
  *
@@ -43,7 +43,7 @@
  * 写指针 m_writeIndex 仅由生产者更新，读指针 m_readIndex 仅由消费者更新，
  * 因此不需要 QMutex，适合高吞吐、低延迟的数据转发场景。
  *
- * @tparam T 帧数据类型，需支持默认构造、移动构造和移动赋值（如 BufferedLockinPacket）
+ * @tparam T 帧数据类型，需支持默认构造、移动构造和移动赋值（如 LockinChannelPacket）
  */
 template <typename T>
 class SpscFrameBuffer
@@ -148,7 +148,7 @@ public:
         const unsigned int writeIndex = m_writeIndex.load(std::memory_order_acquire);
         const unsigned int readIndex = m_readIndex.load(std::memory_order_acquire);
         const unsigned int availableCount = writeIndex - readIndex;
-        Q_ASSERT(availableCount <= static_cast<unsigned int>(m_capacity));
+        Q_ASSERT(availableCount <= static_cast<unsigned int>(m_capacity));   // 用于在调试阶段进行断言，确保缓冲池大小正确，release版本会优化掉这个断言
         return static_cast<int>(availableCount);
     }
 

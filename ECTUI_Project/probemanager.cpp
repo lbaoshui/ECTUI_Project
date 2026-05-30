@@ -183,7 +183,7 @@ void ProbeManager::dispatchAdcData(const QVector<AdcChannelData> &adcData)
  */
 QVector<DaChannelConfig> ProbeManager::buildDaConfig() const
 {
-    // DeviceManager 要求固定 16 个通道
+    // DeviceManager 默认固定 16 个通道
     QVector<DaChannelConfig> result(DeviceManager::DA_CHANNELS);
 
     // 默认全部关闭（幅度为 0）
@@ -196,9 +196,9 @@ QVector<DaChannelConfig> ProbeManager::buildDaConfig() const
         if (!probe->isEnabled()) {
             continue;
         }
-        int hwCh = probe->hardwareChannel();
+        int hwCh = probe->hardwareChannel();   // 获取探头对应的硬件通道号
         if (hwCh >= 1 && hwCh <= DeviceManager::DA_CHANNELS) {
-            result[hwCh - 1] = probe->toDaChannelConfig();
+            result[hwCh - 1] = probe->toDaChannelConfig();    // 将探头配置覆盖到对应通道
         }
     }
 

@@ -28,6 +28,8 @@
 #include <QObject>
 #include "qcustomplot.h"
 #include "customplot.h"
+#include "devicemanager.h"
+#include "probe.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {

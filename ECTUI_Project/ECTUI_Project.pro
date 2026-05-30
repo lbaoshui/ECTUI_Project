@@ -28,7 +28,8 @@ HEADERS += \
     mainwindow.h \
     probe.h \
     probemanager.h \
-    qcustomplot.h
+    qcustomplot.h \
+    phaserotator.h
 
 FORMS += \
     mainwindow.ui

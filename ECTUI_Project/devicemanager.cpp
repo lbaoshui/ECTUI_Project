@@ -20,7 +20,6 @@ constexpr quint32 kAd7768RawAdcPacketId = 0xAA55CC33;   // 原始ADC波形包的
 constexpr int kAd7768PacketHeaderSize = 16;
 constexpr int kAd7768LockinFrameBytes = 64;
 constexpr int kAd7768RawSampleBytes = 32;
-constexpr int kAd7768Channels = 8;
 constexpr int kAd7768MaxPayloadBytes = 16 * 1024 * 1024;   // 最大负载字节数的限制
 
 const QByteArray kAd7768PacketHeaderBytes = QByteArray::fromHex("55aa55aa");   // 包头字节
@@ -79,14 +78,24 @@ DeviceManager::DeviceManager(QObject *parent)
     qRegisterMetaType<ConnectionState>("ConnectionState");
     qRegisterMetaType<AdcChannelData>("AdcChannelData");
     qRegisterMetaType<QVector<AdcChannelData>>("QVector<AdcChannelData>");
-    qRegisterMetaType<LockinChannelData>("LockinChannelData");
-    qRegisterMetaType<QVector<LockinChannelData>>("QVector<LockinChannelData>");
-    qRegisterMetaType<LockinFrameData>("LockinFrameData");
-    qRegisterMetaType<QVector<LockinFrameData>>("QVector<LockinFrameData>");
-    qRegisterMetaType<RawAdcChannelData>("RawAdcChannelData");
-    qRegisterMetaType<QVector<RawAdcChannelData>>("QVector<RawAdcChannelData>");
-    qRegisterMetaType<BufferedLockinPacket>("BufferedLockinPacket");
-    qRegisterMetaType<BufferedRawAdcPacket>("BufferedRawAdcPacket");
+    // qRegisterMetaType<LockinChannelData>("LockinChannelData");
+    // qRegisterMetaType<QVector<LockinChannelData>>("QVector<LockinChannelData>");
+    // qRegisterMetaType<LockinFrameData>("LockinFrameData");
+    // qRegisterMetaType<QVector<LockinFrameData>>("QVector<LockinFrameData>");
+    // qRegisterMetaType<RawAdcChannelData>("RawAdcChannelData");
+    // qRegisterMetaType<QVector<RawAdcChannelData>>("QVector<RawAdcChannelData>");
+    qRegisterMetaType<LockinChannelPacket>("LockinChannelPacket");
+    qRegisterMetaType<RawAdcChannelPacket>("RawAdcChannelPacket");
+
+    // 为每个 AD7768 通道预分配独立无锁缓冲池。
+    m_lockinBuffers.reserve(AD7768_CHANNELS);
+    m_rawAdcBuffers.reserve(AD7768_CHANNELS);
+    for (int i = 0; i < AD7768_CHANNELS; ++i) {
+        m_lockinBuffers.push_back(
+            std::make_unique<SpscFrameBuffer<LockinChannelPacket>>(LOCKIN_BUFFER_CAPACITY));
+        m_rawAdcBuffers.push_back(
+            std::make_unique<SpscFrameBuffer<RawAdcChannelPacket>>(RAW_ADC_BUFFER_CAPACITY));
+    }
 
     // 统一在 DeviceManager 内部处理 socket 生命周期与事件分发。  
     connect(m_socket, &QTcpSocket::connected, this, &DeviceManager::onConnected);           // socket连接成功，更新标志位 
@@ -148,17 +157,12 @@ void DeviceManager::disconnectFromDevice()
     }
 }
 
-// 发送DA配置
+// 发送DA配置,即为激励的DA通道配置参数，如频率、相位、幅值、
 bool DeviceManager::sendDaConfig(const QVector<DaChannelConfig> &channels)
 {
     // 先做连接态与参数完整性校验，再进入协议打包阶段。
     if (m_connState != ConnectionState::Connected) {
         emit errorOccurred(QStringLiteral("设备未连接，无法发送 DA 配置。"));
-        return false;
-    }
-
-    if (channels.size() != DA_CHANNELS) {
-        emit errorOccurred(QStringLiteral("DA 配置通道数必须为 16。"));
         return false;
     }
 
@@ -173,31 +177,50 @@ bool DeviceManager::sendDaConfig(const QVector<DaChannelConfig> &channels)
     return m_socket->waitForBytesWritten(1000);
 }
 
-/*
+// 构建DA配置帧
+QByteArray DeviceManager::buildDaFrame(const QVector<DaChannelConfig> &channels) const
+{
+    // DA 帧结构：
+    // 12 字节固定头 + 16 个通道 * 4 个 uint32(index/freq/phase/amp)
+    QByteArray frame = DA_CONF_HEADER;
+    frame.reserve(DA_CONF_HEADER.size() + DA_CHANNELS * 16);
+
+    for (const DaChannelConfig &channel : channels) {
+        // amp 按旧协议强制夹紧到 [0, 60]，避免下位机收到非法参数。
+        const int DAAmp = std::clamp(channel.amp, 0, DA_MAX_AMP);
+        appendUInt32LE(frame, static_cast<quint32>(channel.index));
+        appendUInt32LE(frame, static_cast<quint32>(channel.freq));
+        appendUInt32LE(frame, static_cast<quint32>(channel.phase));
+        appendUInt32LE(frame, static_cast<quint32>(DAAmp));
+    }
+
+    return frame;
+}
+
+// 默认的通道
 QVector<DaChannelConfig> DeviceManager::defaultDaConfig() const
 {
-    // 这里保留 Python da_ch_conf_ref 的 V2.0 默认映射顺序。
-    // 注意：返回顺序不是简单的 ch=1..16，而是与旧硬件排布保持一致。
+    // 这里是按照给的python里保持一致的顺序
     return {
-        {4, 1, 10000, 0,   60},
-        {3, 1, 10000, 0,   60},
-        {2, 1, 10000, 180, 60},
-        {1, 1, 10000, 180, 60},
-        {8, 1, 10000, 0,   60},
-        {7, 1, 10000, 0,   60},
-        {6, 1, 10000, 180, 60},
-        {5, 1, 10000, 180, 60},
+        {4,  1, 10000, 0,   60},
+        {3,  1, 10000, 0,   60},
+        {2,  1, 10000, 0,   60},
+        {1,  1, 10000, 0,   60},
+        {8,  1, 10000, 0,   60},
+        {7,  1, 10000, 0,   60},
+        {6,  1, 10000, 0,   60},
+        {5,  1, 10000, 0,   60},
         {12, 1, 10000, 0,   60},
         {11, 1, 10000, 0,   60},
-        {10, 1, 10000, 180, 60},
-        {9, 1, 10000, 180, 60},
+        {10, 1, 10000, 0,   60},
+        {9,  1, 10000, 0,   60},
         {16, 1, 10000, 0,   60},
         {15, 1, 10000, 0,   60},
-        {14, 1, 10000, 180, 60},
-        {13, 1, 10000, 180, 60}
+        {14, 1, 10000, 0,   60},
+        {13, 1, 10000, 0,   60}
     };
 }
-*/
+
 
 // 发送采样率配置
 bool DeviceManager::sendSampleRateConfig(SampleRate rate)
@@ -383,7 +406,7 @@ void DeviceManager::onDataReceived()
 void DeviceManager::onDataReceived_New()
 {
     // 把本次 socket 已到达的所有字节追加到缓存中。
-    // 注意 readAll() 不保证刚好等于一个完整 AD7768 数据包。
+    // 因为 readAll() 不保证刚好等于一个完整 AD7768 数据包。
     m_receiveBuffer.append(m_socket->readAll());
 
     // 一次 readyRead 里可能已经收到了多个完整包，所以这里持续尝试解析。
@@ -413,10 +436,10 @@ void DeviceManager::onDataReceived_New()
 
         const char *header = m_receiveBuffer.constData();
         // 包头结构：
-        // id0          固定同步字 0xAA55AA55
-        // id1          包类型：锁相结果包或原始 ADC 包
-        // packetIndex  包序号，用于检测丢包
-        // payloadLength 后续 payload 字节数
+        // id0           ：固定同步字 0xAA55AA55
+        // id1           ：包类型：锁相结果包或原始 ADC 包
+        // packetIndex   ：包序号，用于检测丢包
+        // payloadLength ：后续 payload 字节数
         const quint32 id0 = readUInt32LE(header);
         const quint32 id1 = readUInt32LE(header + 4);
         const quint32 packetIndex = readUInt32LE(header + 8);
@@ -435,8 +458,8 @@ void DeviceManager::onDataReceived_New()
             continue;
         }
 
-        if (payloadLength > static_cast<quint32>(kAd7768MaxPayloadBytes)) {
-            // 长度字段异常通常表示数据流已经错位，避免按错误长度申请或等待超大数据。
+        if (payloadLength > static_cast<quint32>(kAd7768MaxPayloadBytes)) {   // 判断payloadlength大小是否有异常
+            // 长度字段异常通常表示数据流已经错位，避免按错误长度申请或等待超大数据
             emit errorOccurred(QStringLiteral("AD7768 payload 过大：%1 字节").arg(payloadLength));
             m_receiveBuffer.remove(0, 1);
             continue;
@@ -448,7 +471,7 @@ void DeviceManager::onDataReceived_New()
             break;
         }
 
-        // 到这里说明已经拿到一个完整 AD7768 包，可以把 payload 交给业务解析函数。
+        // 到这里说明已经拿到一个完整 AD7768 包，可以把 payload 交给业务解析函数，即把包头去掉
         const QByteArray payload = m_receiveBuffer.mid(kAd7768PacketHeaderSize,
                                                        static_cast<int>(payloadLength));
         bool parsed = false;
@@ -462,60 +485,60 @@ void DeviceManager::onDataReceived_New()
             checkPacketIndex_New(packetIndex);
         }
 
-        // 这里已经按包头长度字段拿到完整包；无论业务解析是否通过，都消费掉该包。
+        // 将解析完的数据从缓冲区中移除
         m_receiveBuffer.remove(0, totalLength);
     }
 }
 
-// 解析锁相包
+// 解析锁相包：按通道拆分，每通道独立推入各自的缓冲池
 bool DeviceManager::parseLockinPacket_New(const QByteArray &payload, quint32 packetIndex)
 {
-    // 锁相 payload 必须按 64 字节/帧对齐，否则说明包长度或字节流同步异常。
+    // 判断payload的数据是否有异常
     if (payload.size() % kAd7768LockinFrameBytes != 0) {
         emit errorOccurred(QStringLiteral("锁相包长度非法：%1 字节").arg(payload.size()));
         return false;
     }
 
-    // 一个 payload 里可能包含多帧锁相结果，例如 128 字节 = 2 帧。
-    const int frameCount = payload.size() / kAd7768LockinFrameBytes;
-    QVector<LockinFrameData> frames;
-    frames.reserve(frameCount);
+    const int frameCount = payload.size() / kAd7768LockinFrameBytes; // 解析有多少帧数据包（每帧64字节，即8个通道）
 
-    const char *raw = payload.constData();
-    for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
-        LockinFrameData frame;
-        frame.channels.reserve(kAd7768Channels);
-
-        // 每帧 64 字节，按 CH1..CH8 顺序排列，每通道 8 字节：amp(int32) + phase(int32)。
-        const int frameOffset = frameIndex * kAd7768LockinFrameBytes;
-        for (int channel = 0; channel < kAd7768Channels; ++channel) {
-            const int channelOffset = frameOffset + channel * 8;
-            const qint32 ampRaw = readInt32LE(raw + channelOffset);
-            const qint32 phaseRaw = readInt32LE(raw + channelOffset + 4);
-
-            LockinChannelData channelData;
-            channelData.ch = channel + 1;
-            // 下位机以 x100 定点上传，上位机除以 100 还原为 mV / 度。
-            channelData.ampMv = static_cast<float>(ampRaw) / 100.0f;
-            channelData.phaseDeg = static_cast<float>(phaseRaw) / 100.0f;
-            // 当前 UI 约定：峰峰值按 Vpp = 2 * 幅值估算。
-            channelData.vppMv = channelData.ampMv * 2.0f;
-            frame.channels.append(channelData);
-        }
-
-        frames.append(frame);
+    // 为每个通道预分配容量。
+    QVector<LockinChannelPacket> channelPackets(AD7768_CHANNELS);
+    for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {
+        channelPackets[ch].packetIndex = packetIndex;
+        channelPackets[ch].ampMv.reserve(frameCount);
+        channelPackets[ch].phaseDeg.reserve(frameCount);
+        // channelPackets[ch].vppMv.reserve(frameCount);
     }
 
-    BufferedLockinPacket packet;
-    packet.packetIndex = packetIndex;
-    packet.frames = std::move(frames);
+    // 将数据放入各自的通道中
+    const char *raw = payload.constData();
+    for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex) {    // N帧数据
+        const int frameOffset = frameIndex * kAd7768LockinFrameBytes;
+        for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {                   // 每帧数据64个字节，8个通道
+            const int channelOffset = frameOffset + ch * 8;
+            const qint32 ampRaw = readInt32LE(raw + channelOffset);      // 拿出4个字节的数据
+            const qint32 phaseRaw = readInt32LE(raw + channelOffset + 4);
 
-    emit lockinDataReady(packetIndex, packet.frames);
-    m_lockinBuffer.push(std::move(packet));            // 将锁相包推入缓冲池
+            const float ampMv = static_cast<float>(ampRaw) / 100.0f;      // 换算出实际的值
+            const float phaseDeg = static_cast<float>(phaseRaw) / 100.0f;
+            // const float vppMv = ampMv * 2.0f;                             // 幅值包络
+
+            channelPackets[ch].ampMv.append(ampMv);
+            channelPackets[ch].phaseDeg.append(phaseDeg);
+            // channelPackets[ch].vppMv.append(vppMv);
+        }
+    }
+
+    // 各通道独立推入各自的无锁缓冲池。
+    for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {
+        // emit lockinChannelDataReady(ch + 1, packetIndex);          // 数据写入缓冲池的通知信号，可在缓冲区无数据等待数据时通知消费者线程，暂时不用
+        m_lockinBuffers[ch]->push(std::move(channelPackets[ch]));
+    }
+
     return true;
 }
 
-// 解析原始ADC波形包
+// 解析原始 ADC 波形包：按通道拆分，每通道独立推入各自的缓冲池。
 bool DeviceManager::parseRawAdcPacket_New(const QByteArray &payload, quint32 packetIndex)
 {
     if (payload.size() % kAd7768RawSampleBytes != 0) {
@@ -524,32 +547,32 @@ bool DeviceManager::parseRawAdcPacket_New(const QByteArray &payload, quint32 pac
     }
 
     const int sampleCount = payload.size() / kAd7768RawSampleBytes;
-    QVector<RawAdcChannelData> channels(kAd7768Channels);
-    for (int channel = 0; channel < kAd7768Channels; ++channel) {
-        channels[channel].ch = channel + 1;
-        channels[channel].adcCodes.reserve(sampleCount);
-        channels[channel].voltageMv.reserve(sampleCount);
+
+    QVector<RawAdcChannelPacket> channelPackets(AD7768_CHANNELS);
+    for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {
+        channelPackets[ch].packetIndex = packetIndex;
+        channelPackets[ch].adcCodes.reserve(sampleCount);
+        channelPackets[ch].voltageMv.reserve(sampleCount);
     }
 
     const char *raw = payload.constData();
     for (int sample = 0; sample < sampleCount; ++sample) {
         const int sampleOffset = sample * kAd7768RawSampleBytes;
-        for (int channel = 0; channel < kAd7768Channels; ++channel) {
-            const int byteOffset = sampleOffset + channel * 4;
+        for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {
+            const int byteOffset = sampleOffset + ch * 4;
             const qint32 adcCode = readInt32LE(raw + byteOffset);
             const double voltageMv = static_cast<double>(adcCode) * 4096.0 / 8388607.0;
 
-            channels[channel].adcCodes.append(adcCode);
-            channels[channel].voltageMv.append(voltageMv);
+            channelPackets[ch].adcCodes.append(adcCode);
+            channelPackets[ch].voltageMv.append(voltageMv);
         }
     }
 
-    BufferedRawAdcPacket packet;
-    packet.packetIndex = packetIndex;
-    packet.channels = std::move(channels);
+    for (int ch = 0; ch < AD7768_CHANNELS; ++ch) {
+        emit rawAdcChannelDataReady(ch + 1, packetIndex);
+        m_rawAdcBuffers[ch]->push(std::move(channelPackets[ch]));
+    }
 
-    emit rawAdcDataReady(packetIndex, packet.channels);
-    m_rawAdcBuffer.push(std::move(packet));
     return true;
 }
 
@@ -570,27 +593,12 @@ void DeviceManager::resetStreamingState()
     m_receiveBuffer.clear();
     m_hasLastNewPacketIndex = false;
     m_lastNewPacketIndex = 0;
-    m_lockinBuffer.clear();
-    m_rawAdcBuffer.clear();
-}
-
-QByteArray DeviceManager::buildDaFrame(const QVector<DaChannelConfig> &channels) const
-{
-    // DA 帧结构：
-    // 12 字节固定头 + 16 个通道 * 4 个 uint32(index/freq/phase/amp)
-    QByteArray frame = DA_CONF_HEADER;
-    frame.reserve(DA_CONF_HEADER.size() + DA_CHANNELS * 16);
-
-    for (const DaChannelConfig &channel : channels) {
-        // amp 按旧协议强制夹紧到 [0, 60]，避免下位机收到非法参数。
-        const int clampedAmp = std::clamp(channel.amp, 0, DA_MAX_AMP);
-        appendUInt32LE(frame, static_cast<quint32>(channel.index));
-        appendUInt32LE(frame, static_cast<quint32>(channel.freq));
-        appendUInt32LE(frame, static_cast<quint32>(channel.phase));
-        appendUInt32LE(frame, static_cast<quint32>(clampedAmp));
+    for (auto &buf : m_lockinBuffers) {
+        buf->clear();
     }
-
-    return frame;
+    for (auto &buf : m_rawAdcBuffers) {
+        buf->clear();
+    }
 }
 
 QByteArray DeviceManager::buildSampleRateFrame(SampleRate rate) const
@@ -613,6 +621,7 @@ int DeviceManager::findFrameHeader(const QByteArray &buf, int from) const
     return buf.indexOf(ADC_DATA_HEADER, from);
 }
 
+/*
 bool DeviceManager::parseAdcFrame(const QByteArray &frame)
 {
     // 先做长度和关键字段校验，避免后续按固定偏移解析时越界或误解包。
@@ -664,7 +673,9 @@ bool DeviceManager::parseAdcFrame(const QByteArray &frame)
 
     return true;
 }
+*/
 
+/*
 float DeviceManager::computeChannelVpp(const QVector<quint32> &samples) const
 {
     if (samples.isEmpty()) {
@@ -691,51 +702,95 @@ float DeviceManager::computeChannelVpp(const QVector<quint32> &samples) const
     // 转成物理量，单位与旧版 Python 实现保持一致。
     return rawVpp * kVppScale;
 }
+*/
 
-// 批量取出锁大包，取走即从池中删除。调用者获得帧所有权。
-QVector<BufferedLockinPacket> DeviceManager::takeLockinPackets(int maxCount)
+// 取出指定通道的锁相包。channel 从 1 开始。
+QVector<LockinChannelPacket> DeviceManager::takeLockinPackets(int channel, int maxCount)
 {
-    return m_lockinBuffer.take(maxCount);
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_lockinBuffers.size())) {
+        return {};
+    }
+    return m_lockinBuffers[index]->take(maxCount);
 }
 
-// 批量取出 RawADC 包，取走即从池中删除。调用者获得帧所有权。
-QVector<BufferedRawAdcPacket> DeviceManager::takeRawAdcPackets(int maxCount)
+QVector<RawAdcChannelPacket> DeviceManager::takeRawAdcPackets(int channel, int maxCount)
 {
-    return m_rawAdcBuffer.take(maxCount);
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_rawAdcBuffers.size())) {
+        return {};
+    }
+    return m_rawAdcBuffers[index]->take(maxCount);
 }
 
-// 读取最新一帧锁大包，不删除。适合 UI 定时器轮询。
-bool DeviceManager::latestLockinPacket(BufferedLockinPacket *out) const
+// 读取指定通道最新一帧锁相数据，不删除。适合 UI 定时器轮询。
+bool DeviceManager::latestLockinPacket(int channel, LockinChannelPacket *out) const
 {
-    return m_lockinBuffer.latest(out);
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_lockinBuffers.size())) {
+        return false;
+    }
+    return m_lockinBuffers[index]->latest(out);
 }
 
-// 读取最新一帧 RawADC 包，不删除。适合 UI 定时器轮询。
-bool DeviceManager::latestRawAdcPacket(BufferedRawAdcPacket *out) const
+bool DeviceManager::latestRawAdcPacket(int channel, RawAdcChannelPacket *out) const
 {
-    return m_rawAdcBuffer.latest(out);
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_rawAdcBuffers.size())) {
+        return false;
+    }
+    return m_rawAdcBuffers[index]->latest(out);
 }
 
-// 当前缓冲池中未取走的锁大包数量。
-int DeviceManager::lockinPacketCount() const
+// 指定通道缓冲池中未取走的帧数。
+int DeviceManager::lockinPacketCount(int channel) const
 {
-    return m_lockinBuffer.size();
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_lockinBuffers.size())) {
+        return 0;
+    }
+    return m_lockinBuffers[index]->size();
 }
 
-// 当前缓冲池中未取走的 RawADC 包数量。
-int DeviceManager::rawAdcPacketCount() const
+int DeviceManager::rawAdcPacketCount(int channel) const
 {
-    return m_rawAdcBuffer.size();
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_rawAdcBuffers.size())) {
+        return 0;
+    }
+    return m_rawAdcBuffers[index]->size();
 }
 
-// 清空锁大缓冲池，重置所有槽位。调用期间不应与 push 并发。
-void DeviceManager::clearLockinPackets()
+// 清空指定通道的缓冲池。调用期间不应与 push 并发。
+void DeviceManager::clearLockinPackets(int channel)
 {
-    m_lockinBuffer.clear();
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_lockinBuffers.size())) {
+        return;
+    }
+    m_lockinBuffers[index]->clear();
 }
 
-// 清空 RawADC 缓冲池，重置所有槽位。调用期间不应与 push 并发。
-void DeviceManager::clearRawAdcPackets()
+void DeviceManager::clearRawAdcPackets(int channel)
 {
-    m_rawAdcBuffer.clear();
+    const int index = channel - 1;
+    if (index < 0 || index >= static_cast<int>(m_rawAdcBuffers.size())) {
+        return;
+    }
+    m_rawAdcBuffers[index]->clear();
+}
+
+// 清空全部通道的锁相/原始 ADC 缓冲池。
+void DeviceManager::clearAllLockinPackets()
+{
+    for (auto &buf : m_lockinBuffers) {
+        buf->clear();
+    }
+}
+
+void DeviceManager::clearAllRawAdcPackets()
+{
+    for (auto &buf : m_rawAdcBuffers) {
+        buf->clear();
+    }
 }

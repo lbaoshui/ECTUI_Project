@@ -156,11 +156,9 @@ QVector<int> ProbeManager::channelMapping() const
 }
 
 /**
- * @brief 将 ADC 原始数据分发给各探头
- * @param adcData 来自 DeviceManager 的多通道数据
- *
- * 根据硬件通道号匹配 Probe，写入数据后依次更新 Vpp 与灵敏度。
+ * @brief 将 ADC 原始数据分发给各探头（已废弃）
  */
+/*
 void ProbeManager::dispatchAdcData(const QVector<AdcChannelData> &adcData)
 {
     for (const AdcChannelData &chData : adcData) {
@@ -173,6 +171,39 @@ void ProbeManager::dispatchAdcData(const QVector<AdcChannelData> &adcData)
         probe->updateVpp();
         probe->updateSensitivity();
     }
+}
+*/
+
+/**
+ * @brief 将 AD7768 锁相解调数据分发给对应硬件通道的 Probe
+ * @param channel     通道索引（0 - 7）
+ * @param packet      包含该通道最新的幅值和相位数据包
+ */
+void ProbeManager::dispatchLockinData(int channel, const LockinChannelPacket &packet)
+{
+    // 映射：硬件通道号 = 索引 + 1
+    Probe *probe = probeByHardwareChannel(channel + 1);
+    if (!probe) {
+        return;
+    }
+
+    int size = packet.ampMv.size();
+    if (probe->realTimeData()) {
+        probe->realTimeData()->AssignedMemoryForProbeData(size, size);
+        
+        // 安全拷贝幅值和相位数据
+        if (size > 0 && probe->realTimeData()->m_rawData_amp && probe->realTimeData()->m_rawData_phase) {
+            std::copy(packet.ampMv.constBegin(), packet.ampMv.constEnd(), probe->realTimeData()->m_rawData_amp->begin());
+            std::copy(packet.phaseDeg.constBegin(), packet.phaseDeg.constEnd(), probe->realTimeData()->m_rawData_phase->begin());
+        }
+    }
+    
+    probe->setLastUpdateTime(QDateTime::currentDateTime());
+
+    // 重新计算并通知 UI
+    probe->updateVpp();
+    probe->updateSensitivity();
+    emit probe->dataUpdated();
 }
 
 /**

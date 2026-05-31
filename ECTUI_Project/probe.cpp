@@ -12,10 +12,191 @@
  *
  * 由硬件增益与 ADC 分辨率换算得到，用于将原始采样值转换为实际电压。
  */
+/*
+ * @Descripttion: 单个探头数据封装实现
+ * @version: 2.0.0
+ */
+#include "probe.h"
+
+#include <QMutexLocker>
+#include <algorithm>
+
+/**
+ * @brief 内部常量：Vpp 计算缩放系数
+ *
+ * 由硬件增益与 ADC 分辨率换算得到，用于将原始采样值转换为实际电压。
+ */
 namespace {
 
 constexpr float kVppScale = 1.03f * 0.122f;
 
+}
+
+ProbeData::ProbeData() {}
+
+ProbeData::~ProbeData()
+{
+    release();
+}
+
+// 深拷贝构造函数
+ProbeData::ProbeData(const ProbeData& other)
+{
+    if (other.m_rawData_amp != nullptr) {
+        m_rawData_amp = new QVector<float>(*other.m_rawData_amp);
+    }
+    if (other.m_rawData_phase != nullptr) {
+        m_rawData_phase = new QVector<float>(*other.m_rawData_phase);
+    }
+}
+
+// 深拷贝赋值运算符
+ProbeData& ProbeData::operator=(const ProbeData& other)
+{
+    if (this != &other) {
+        // 智能重用已有内存，仅在大小不一致时才重新分配
+        if (m_rawData_amp != nullptr && other.m_rawData_amp != nullptr && m_rawData_amp->size() == other.m_rawData_amp->size()) {
+            *m_rawData_amp = *other.m_rawData_amp;
+        } else {
+            delete m_rawData_amp;
+            m_rawData_amp = other.m_rawData_amp ? new QVector<float>(*other.m_rawData_amp) : nullptr;
+        }
+
+        if (m_rawData_phase != nullptr && other.m_rawData_phase != nullptr && m_rawData_phase->size() == other.m_rawData_phase->size()) {
+            *m_rawData_phase = *other.m_rawData_phase;
+        } else {
+            delete m_rawData_phase;
+            m_rawData_phase = other.m_rawData_phase ? new QVector<float>(*other.m_rawData_phase) : nullptr;
+        }
+    }
+    return *this;
+}
+
+// 移动构造函数 (轻量化转移所有权，常用于乒乓缓冲区的快速指针切换)
+ProbeData::ProbeData(ProbeData&& other) noexcept
+    : m_rawData_amp(other.m_rawData_amp),
+      m_rawData_phase(other.m_rawData_phase)
+{
+    other.m_rawData_amp = nullptr;
+    other.m_rawData_phase = nullptr;
+}
+
+// 移动赋值运算符
+ProbeData& ProbeData::operator=(ProbeData&& other) noexcept
+{
+    if (this != &other) {
+        release();
+        m_rawData_amp = other.m_rawData_amp;
+        m_rawData_phase = other.m_rawData_phase;
+        other.m_rawData_amp = nullptr;
+        other.m_rawData_phase = nullptr;
+    }
+    return *this;
+}
+
+// 统一分配内存大小 (智能重用：大小匹配则跳过 delete/new，避免内存碎片和耗时)
+void ProbeData::AssignedMemoryForProbeData(int ampSize, int phaseSize)
+{
+    if (m_rawData_amp != nullptr && m_rawData_amp->size() == ampSize &&
+        m_rawData_phase != nullptr && m_rawData_phase->size() == phaseSize) {
+        return;
+    }
+
+    if (m_rawData_amp != nullptr) {
+        delete m_rawData_amp;
+    }
+    if (m_rawData_phase != nullptr) {
+        delete m_rawData_phase;
+    }
+    m_rawData_amp = new QVector<float>(ampSize, 0.0f);
+    m_rawData_phase = new QVector<float>(phaseSize, 0.0f);
+}
+
+// 释放底层 QVector 指针内存并置空
+void ProbeData::release()
+{
+    if (m_rawData_amp != nullptr) {
+        delete m_rawData_amp;
+        m_rawData_amp = nullptr;
+    }
+    if (m_rawData_phase != nullptr) {
+        delete m_rawData_phase;
+        m_rawData_phase = nullptr;
+    }
+}
+
+// 清空数据（大小设为 0，但保留已分配的内存容量）
+void ProbeData::clear()
+{
+    if (m_rawData_amp != nullptr) {
+        m_rawData_amp->clear();
+    }
+    if (m_rawData_phase != nullptr) {
+        m_rawData_phase->clear();
+    }
+}
+
+// 分配内存并以 0 填充
+void ProbeData::fillZero(int ampSize, int phaseSize)
+{
+    AssignedMemoryForProbeData(ampSize, phaseSize);
+    if (m_rawData_amp != nullptr) {
+        m_rawData_amp->fill(0.0f);
+    }
+    if (m_rawData_phase != nullptr) {
+        m_rawData_phase->fill(0.0f);
+    }
+}
+
+// 批量追加数据（可用于乒乓缓冲区的数据累积暂存）
+void ProbeData::append(const QVector<float>& amp, const QVector<float>& phase)
+{
+    if (m_rawData_amp == nullptr) {
+        m_rawData_amp = new QVector<float>();
+    }
+    if (m_rawData_phase == nullptr) {
+        m_rawData_phase = new QVector<float>();
+    }
+    m_rawData_amp->append(amp);
+    m_rawData_phase->append(phase);
+}
+
+// 追加单个数据点
+void ProbeData::appendPoint(float ampVal, float phaseVal)
+{
+    if (m_rawData_amp == nullptr) {
+        m_rawData_amp = new QVector<float>();
+    }
+    if (m_rawData_phase == nullptr) {
+        m_rawData_phase = new QVector<float>();
+    }
+    m_rawData_amp->append(ampVal);
+    m_rawData_phase->append(phaseVal);
+}
+
+// 快速指针交换操作，O(1) 复杂度，常用于乒乓缓冲区的快速无锁轮转
+void ProbeData::swap(ProbeData& other) noexcept
+{
+    std::swap(m_rawData_amp, other.m_rawData_amp);
+    std::swap(m_rawData_phase, other.m_rawData_phase);
+}
+
+// 判断数据是否为空
+bool ProbeData::isEmpty() const
+{
+    return (m_rawData_amp == nullptr || m_rawData_amp->isEmpty());
+}
+
+// 获取幅值数据大小
+int ProbeData::ampSize() const
+{
+    return m_rawData_amp ? m_rawData_amp->size() : 0;
+}
+
+// 获取相位数据大小
+int ProbeData::phaseSize() const
+{
+    return m_rawData_phase ? m_rawData_phase->size() : 0;
 }
 
 /**
@@ -30,9 +211,16 @@ Probe::Probe(int probeId, int hardwareChannel, QObject *parent)
       m_hwChannel(hardwareChannel),
       m_name(QStringLiteral("探头-%1").arg(probeId + 1))
 {
-    // m_rawData.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
-    m_rawData_amp.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
-    m_rawData_phase.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    m_realTimeData = new ProbeData();
+    m_realTimeData->AssignedMemoryForProbeData(DeviceManager::ADC_SAMPLES_buffer_PER_CH, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+}
+
+Probe::~Probe()
+{
+    if (m_realTimeData != nullptr) {
+        delete m_realTimeData;
+        m_realTimeData = nullptr;
+    }
 }
 
 // 设置对应的硬件通道，按照该硬件通道读取数据
@@ -71,40 +259,6 @@ DaChannelConfig Probe::toDaChannelConfig() const
 }
 
 /**
- * @brief 获取最近一次写入的原始 ADC 数据
- */
-QVector<quint32> Probe::rawData() const
-{
-    return m_rawData;
-}
-
-/**
- * @brief 写入原始 ADC 数据并触发后续计算
- * @param data 来自 DeviceManager 的原始采样值
- *
- * 若数据长度异常，则标记故障状态；否则更新数据并通知界面刷新。
- */
-void Probe::setRawData(const QVector<quint32> &data)
-{
-    if (data.size() != DeviceManager::ADC_SAMPLES_PER_CH) {
-        if (!m_hasFault) {
-            m_hasFault = true;
-            emit faultStateChanged(true);
-        }
-        return;
-    }
-
-    if (m_hasFault) {
-        m_hasFault = false;
-        emit faultStateChanged(false);
-    }
-
-    m_rawData = data;
-    // m_lastUpdateTime = QDateTime::currentDateTime();
-    emit dataUpdated();
-}
-
-/**
  * @brief 启用或禁用该探头
  * @param enabled true 为启用，false 为禁用
  */
@@ -120,7 +274,7 @@ void Probe::setEnabled(bool enabled)
 /**
  * @brief 采集当前 Vpp 作为基线
  *
- * 将当前计算出的 m_vpp 保存为 baseline，用于后续灵敏度计算。
+ * 将当前计算出的 m_vpp保存为 baseline，用于后续灵敏度计算。
  */
 void Probe::captureBaseline()
 {
@@ -180,28 +334,28 @@ void Probe::updateSensitivity()
  * @brief 内部 Vpp 计算：去极值平均法
  * @return 计算得到的峰峰值电压
  *
- * 对原始数据排序后，各取最小的 5 个和最大的 5 个做平均，
+ * 对实时幅值数据排序后，各取最小的 5 个和最大的 5 个做平均，
  * 以消除毛刺和极端噪声，再乘以缩放系数得到实际电压。
  */
 float Probe::computeVppInternal() const
 {
-    if (m_rawData.isEmpty()) {
+    if (m_realTimeData == nullptr || m_realTimeData->m_rawData_amp == nullptr || m_realTimeData->m_rawData_amp->isEmpty()) {
         return 0.0f;
     }
 
-    QVector<quint32> sorted = m_rawData;
+    QVector<float> sorted = *(m_realTimeData->m_rawData_amp);
     std::sort(sorted.begin(), sorted.end());
 
     const int sampleCount = std::min(5, static_cast<int>(sorted.size()));
-    quint64 bottomSum = 0;
-    quint64 topSum = 0;
+    float bottomSum = 0;
+    float topSum = 0;
 
     for (int i = 0; i < sampleCount; ++i) {
         bottomSum += sorted[i];
         topSum += sorted[sorted.size() - 1 - i];
     }
 
-    const float bottomAvg = static_cast<float>(bottomSum) / sampleCount;
-    const float topAvg = static_cast<float>(topSum) / sampleCount;
+    const float bottomAvg = bottomSum / sampleCount;
+    const float topAvg = topSum / sampleCount;
     return (topAvg - bottomAvg) * kVppScale;
 }

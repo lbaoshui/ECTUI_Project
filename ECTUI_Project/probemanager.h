@@ -60,9 +60,14 @@ public:
 
     // ── 数据分发 ────────────────────────────
     /**
-     * @brief 从 DeviceManager 接收原始 ADC 数据，分发给各 Probe
+     * @brief 从 DeviceManager 接收原始 ADC 数据，分发给各 Probe（已废弃）
      */
-    void dispatchAdcData(const QVector<AdcChannelData> &adcData);
+    // void dispatchAdcData(const QVector<AdcChannelData> &adcData);
+
+    /**
+     * @brief 将 AD7768 锁相解调数据分发给对应硬件通道的 Probe
+     */
+    void dispatchLockinData(int channel, const LockinChannelPacket &packet);
 
     // ── DA 配置生成 ─────────────────────────
     /**

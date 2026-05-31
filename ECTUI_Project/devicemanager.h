@@ -4,7 +4,7 @@
  * @Author: June0821
  * @Date: 2025-10-15 15:41:10
  * @LastEditors: June0821
- * @LastEditTime: 2026-05-30 22:47:21
+ * @LastEditTime: 2026-05-31 12:32:53
  */
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
@@ -242,7 +242,7 @@ signals:
      * 信号参数中携带最近一帧 16 通道的完整 512 点采样数据，
      * UI 或上层算法模块可以直接订阅该信号做绘图、存盘、特征提取等操作。
      */
-    void adcDataReady(QVector<AdcChannelData> data);
+    // void adcDataReady(QVector<AdcChannelData> data);
 
     /** 发生错误 */
     void errorOccurred(const QString &msg);
@@ -306,8 +306,8 @@ private:
     quint32           m_lastNewPacketIndex = 0;
 
     // m_adcData 由 readyRead 回调写入，也可能被 UI 或算法线程读取，因此加锁保护。
-    mutable QMutex    m_dataMutex;
-    QVector<AdcChannelData> m_adcData;   // 最近一帧数据
+    // mutable QMutex    m_dataMutex;
+    // QVector<AdcChannelData> m_adcData;   // 最近一帧数据
 
     // AD7768 新协议：每通道独立无锁环形缓冲池（按通道索引访问）
     std::vector<std::unique_ptr<SpscFrameBuffer<LockinChannelPacket>>> m_lockinBuffers;

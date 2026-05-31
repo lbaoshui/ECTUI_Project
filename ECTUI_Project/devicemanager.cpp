@@ -61,18 +61,19 @@ const QByteArray DeviceManager::ADC_DATA_HEADER =
 const QByteArray DeviceManager::ADC_DATA_LEN_TAG =
     QByteArray::fromHex("40400000");                      // 旧版数据包长度：16384个byte
 
+// 构造函数
 DeviceManager::DeviceManager(QObject *parent)
     : QObject(parent),
       m_socket(new QTcpSocket(this)),
       m_connState(ConnectionState::Disconnected),
       m_adcData(ADC_CHANNELS)
 {
-    // 预初始化 16 个通道的数据容器，避免首次收包前上层读取到空结构。
-    for (int channel = 0; channel < ADC_CHANNELS; ++channel) {
-        m_adcData[channel].ch = channel + 1;
-        m_adcData[channel].index = 1;
-        m_adcData[channel].data.fill(0, ADC_SAMPLES_PER_CH);
-    }
+    // // 预初始化 16 个通道的数据容器，避免首次收包前上层读取到空结构。
+    // for (int channel = 0; channel < ADC_CHANNELS; ++channel) {
+    //     m_adcData[channel].ch = channel + 1;
+    //     m_adcData[channel].index = 1;
+    //     m_adcData[channel].data.fill(0, ADC_SAMPLES_PER_CH);
+    // }
 
     // 注册元类型，保证自定义类型可经由 Qt 信号槽系统传递。
     qRegisterMetaType<ConnectionState>("ConnectionState");
@@ -200,7 +201,7 @@ QByteArray DeviceManager::buildDaFrame(const QVector<DaChannelConfig> &channels)
 // 默认的通道
 QVector<DaChannelConfig> DeviceManager::defaultDaConfig() const
 {
-    // 这里是按照给的python里保持一致的顺序
+    // 这里是按照给的python代码里保持一致的顺序
     return {
         {4,  1, 10000, 0,   60},
         {3,  1, 10000, 0,   60},

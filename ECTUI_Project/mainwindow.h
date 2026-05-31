@@ -30,6 +30,7 @@
 #include "customplot.h"
 #include "devicemanager.h"
 #include "probe.h"
+#include "probemanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -58,6 +59,9 @@ private slots:
 
     // 底部菜单切换槽函数
     void onTabChanged(int index);
+
+    // 探头参数配置对话框
+    void onMoreParametersClicked();
 
 private:
     Ui::MainWindow *ui;
@@ -178,6 +182,7 @@ private:
     QLabel *m_connectionStatusLabel2;
     QString m_selectedInterfaceId;
     DeviceManager *m_deviceManager;
+    ProbeManager *m_probeManager;
     QString m_deviceHost;
     quint16 m_devicePort = 8899;
     bool m_deviceConnectionPending = false;
@@ -249,7 +254,7 @@ private:
     void connectToRemoteDevice();
     void updateDeviceConnectionStatusText();
     void updateParameterDisplay();
-    void updateCircleCurve(); // 更新圆形曲线
+    void updateCircleCurve();       // 更新圆形曲线
 
     void updateplot1_zerotickerLine(QCustomPlot* plot);
     void updateplot1_zerotickerLine_0();

@@ -18,6 +18,7 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     probe.cpp \
+    probeconfigdialog.cpp \
     probemanager.cpp \
     qcustomplot.cpp
 
@@ -27,6 +28,7 @@ HEADERS += \
     framebuffer.h \
     mainwindow.h \
     probe.h \
+    probeconfigdialog.h \
     probemanager.h \
     qcustomplot.h \
     phaserotator.h

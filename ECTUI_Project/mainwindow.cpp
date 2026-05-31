@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "devicemanager.h"
+#include "probeconfigdialog.h"
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -22,8 +23,10 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , m_deviceManager(new DeviceManager(this))
+    , m_probeManager(new ProbeManager(this))
 {
     ui->setupUi(this);
+    m_probeManager->setProbeCount(8);  // 默认 8 个探头通道
     setupUI();
 }
 
@@ -767,6 +770,10 @@ void MainWindow::setupConnections()
     // 底部Tab切换连接
     connect(m_bottomTabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
 
+    // 探头参数配置按钮
+    connect(m_stackMoreParametersBtn, &QPushButton::clicked,
+            this, &MainWindow::onMoreParametersClicked);
+
     // 连接坐标轴范围变化信号到圆形曲线更新
     connect(m_plot1->xAxis, QOverload<const QCPRange &>::of(&QCPAxis::rangeChanged),
             this, &MainWindow::updateCircleCurve);
@@ -1363,6 +1370,18 @@ void MainWindow::onConfirmClicked()
 void MainWindow::onCancelClicked()
 {
     // 实现取消操作逻辑
+}
+
+/**
+ * @brief 打开探头通道参数配置对话框
+ *
+ * 弹出 ProbeConfigDialog，用户可设置探头数量、各通道硬件映射、
+ * 激励频率/相位/幅度及启用状态；确认后自动同步到 ProbeManager。
+ */
+void MainWindow::onMoreParametersClicked()
+{
+    ProbeConfigDialog dialog(m_probeManager, this);
+    dialog.exec();
 }
 
 /**

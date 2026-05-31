@@ -65,8 +65,8 @@ const QByteArray DeviceManager::ADC_DATA_LEN_TAG =
 DeviceManager::DeviceManager(QObject *parent)
     : QObject(parent),
       m_socket(new QTcpSocket(this)),
-      m_connState(ConnectionState::Disconnected),
-      m_adcData(ADC_CHANNELS)
+      m_connState(ConnectionState::Disconnected)
+    //   m_adcData(ADC_CHANNELS)
 {
     // // 预初始化 16 个通道的数据容器，避免首次收包前上层读取到空结构。
     // for (int channel = 0; channel < ADC_CHANNELS; ++channel) {
@@ -77,8 +77,8 @@ DeviceManager::DeviceManager(QObject *parent)
 
     // 注册元类型，保证自定义类型可经由 Qt 信号槽系统传递。
     qRegisterMetaType<ConnectionState>("ConnectionState");
-    qRegisterMetaType<AdcChannelData>("AdcChannelData");
-    qRegisterMetaType<QVector<AdcChannelData>>("QVector<AdcChannelData>");
+    // qRegisterMetaType<AdcChannelData>("AdcChannelData");
+    // qRegisterMetaType<QVector<AdcChannelData>>("QVector<AdcChannelData>");
     // qRegisterMetaType<LockinChannelData>("LockinChannelData");
     // qRegisterMetaType<QVector<LockinChannelData>>("QVector<LockinChannelData>");
     // qRegisterMetaType<LockinFrameData>("LockinFrameData");

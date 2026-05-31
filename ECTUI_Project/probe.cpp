@@ -30,7 +30,7 @@ Probe::Probe(int probeId, int hardwareChannel, QObject *parent)
       m_hwChannel(hardwareChannel),
       m_name(QStringLiteral("探头-%1").arg(probeId + 1))
 {
-    m_rawData.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    // m_rawData.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
     m_rawData_amp.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
     m_rawData_phase.fill(0, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
 }

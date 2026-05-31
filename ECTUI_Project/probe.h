@@ -7,6 +7,7 @@
 
 #include "devicemanager.h"
 #include <QDateTime>
+#include <QMutex>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -113,10 +114,18 @@ public:
   DaChannelConfig toDaChannelConfig() const;
 
   // ── 3. 实时采集数据 ─────────────────────
-  ProbeData *realTimeData() { return m_realTimeData; }
-  const ProbeData *realTimeData() const { return m_realTimeData; }
+  ProbeData *realTimeData() { return m_activeData; }
+  const ProbeData *realTimeData() const { return m_activeData; }
   QDateTime lastUpdateTime() const { return m_lastUpdateTime; }
   void setLastUpdateTime(const QDateTime &time) { m_lastUpdateTime = time; }
+
+  // ── 3.1 乒乓缓冲区 ─────────────────────
+  /** @brief 活跃缓冲区，仅供采集线程写入 */
+  ProbeData *activeData() { return m_activeData; }
+  /** @brief 保存缓冲区，主线程在收到 dataReady 信号后安全读取 */
+  ProbeData *saveData() { return m_saveData; }
+  /** @brief 交换活跃/保存缓冲区指针（采集线程在写完一批数据后调用） */
+  void swapBuffers();
 
   // ── 4. 计算结果 ─────────────────────────
   float vpp() const { return m_vpp; }
@@ -163,9 +172,9 @@ private:
 
   // === 3. 实时数据 ===
   ProbeData *m_activeData = nullptr; // 活跃缓冲区：消费者线程实时写入
-  ProbeData *m_saveData =
-      nullptr; // 保存缓冲区：数据满了之后，交给保存线程进行落盘
-  //   QDateTime m_lastUpdateTime;        // 最近一次数据更新时间
+  ProbeData *m_saveData = nullptr; // 保存缓冲区：数据满了之后，交给保存线程进行落盘
+  QMutex m_bufferMutex;             // 乒乓缓冲区交换锁
+  QDateTime m_lastUpdateTime;        // 最近一次数据更新时间
 
   // === 4. 计算结果 ===
   float m_vpp = 0.0f;         ///< 当前峰峰值电压

@@ -190,15 +190,18 @@ void ProbeManager::dispatchLockinData(int channel, const LockinChannelPacket &pa
     int size = packet.ampMv.size();
     if (probe->realTimeData()) {
         probe->realTimeData()->AssignedMemoryForProbeData(size, size);
-        
+
         // 安全拷贝幅值和相位数据
         if (size > 0 && probe->realTimeData()->m_rawData_amp && probe->realTimeData()->m_rawData_phase) {
             std::copy(packet.ampMv.constBegin(), packet.ampMv.constEnd(), probe->realTimeData()->m_rawData_amp->begin());
             std::copy(packet.phaseDeg.constBegin(), packet.phaseDeg.constEnd(), probe->realTimeData()->m_rawData_phase->begin());
         }
     }
-    
+
     probe->setLastUpdateTime(QDateTime::currentDateTime());
+
+    // 乒乓缓冲区交换，使得 computeVppInternal 能从 saveData 读取
+    probe->swapBuffers();
 
     // 重新计算并通知 UI
     probe->updateVpp();

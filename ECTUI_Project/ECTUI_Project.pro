@@ -14,6 +14,7 @@ CONFIG += c++17
 
 SOURCES += \
     customplot.cpp \
+    dataacquisitionthread.cpp \
     devicemanager.cpp \
     main.cpp \
     mainwindow.cpp \
@@ -24,6 +25,7 @@ SOURCES += \
 
 HEADERS += \
     customplot.h \
+    dataacquisitionthread.h \
     devicemanager.h \
     framebuffer.h \
     mainwindow.h \

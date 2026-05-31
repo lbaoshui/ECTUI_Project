@@ -211,16 +211,23 @@ Probe::Probe(int probeId, int hardwareChannel, QObject *parent)
       m_hwChannel(hardwareChannel),
       m_name(QStringLiteral("探头-%1").arg(probeId + 1))
 {
-    m_realTimeData = new ProbeData();
-    m_realTimeData->AssignedMemoryForProbeData(DeviceManager::ADC_SAMPLES_buffer_PER_CH, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    m_activeData = new ProbeData();
+    m_activeData->AssignedMemoryForProbeData(DeviceManager::ADC_SAMPLES_buffer_PER_CH, DeviceManager::ADC_SAMPLES_buffer_PER_CH);
+    m_saveData = new ProbeData();
 }
 
 Probe::~Probe()
 {
-    if (m_realTimeData != nullptr) {
-        delete m_realTimeData;
-        m_realTimeData = nullptr;
-    }
+    delete m_activeData;
+    m_activeData = nullptr;
+    delete m_saveData;
+    m_saveData = nullptr;
+}
+
+void Probe::swapBuffers()
+{
+    QMutexLocker lock(&m_bufferMutex);
+    std::swap(m_activeData, m_saveData);
 }
 
 // 设置对应的硬件通道，按照该硬件通道读取数据
@@ -339,11 +346,11 @@ void Probe::updateSensitivity()
  */
 float Probe::computeVppInternal() const
 {
-    if (m_realTimeData == nullptr || m_realTimeData->m_rawData_amp == nullptr || m_realTimeData->m_rawData_amp->isEmpty()) {
+    if (m_saveData == nullptr || m_saveData->m_rawData_amp == nullptr || m_saveData->m_rawData_amp->isEmpty()) {
         return 0.0f;
     }
 
-    QVector<float> sorted = *(m_realTimeData->m_rawData_amp);
+    QVector<float> sorted = *(m_saveData->m_rawData_amp);
     std::sort(sorted.begin(), sorted.end());
 
     const int sampleCount = std::min(5, static_cast<int>(sorted.size()));

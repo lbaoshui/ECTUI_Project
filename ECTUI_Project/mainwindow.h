@@ -141,7 +141,7 @@ private:
     QVBoxLayout *m_plotArea1Layout;
     // QCustomPlot *m_plot1;
     customplot *m_plot1;
-    QCPCurve *m_circleCurve; // 圆形曲线
+    QCPCurve *m_circleCurve; // 圆形曲线，用于提供环形参考线
 
     // 绘图区2（右上）+ 模式信息
     QFrame *m_plotArea2Frame;
@@ -262,6 +262,12 @@ private:
     void updateplot2_Double_axis_line();
 
     bool eventFilter(QObject *obj, QEvent *event);
+
+    // 绘图曲线的各种变量    
+    QCPCurve* impedance_curve = nullptr;   // 阻抗曲线
+    QCPGraph* amplitude_curve = nullptr;   // 幅值曲线
+    QCPGraph* phase_curve     = nullptr;   // 相位曲线
+    
 
 signals:
     void plotsize_changed();

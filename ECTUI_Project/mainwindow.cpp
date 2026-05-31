@@ -22,11 +22,11 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , m_deviceManager(new DeviceManager(this))
-    , m_probeManager(new ProbeManager(this))
+    , m_deviceManager(new DeviceManager(this))        // 初始化设备管理器
+    , m_probeManager(new ProbeManager(this))          // 初始化探头管理器
 {
     ui->setupUi(this);
-    m_probeManager->setProbeCount(8);  // 默认 8 个探头通道
+    m_probeManager->setProbeCount(8);  // 默认 8 个探头通道   
     setupUI();
 }
 

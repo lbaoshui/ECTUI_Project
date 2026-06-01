@@ -11,9 +11,9 @@
 #define DATAACQUISITIONTHREAD_H
 
 #include <QThread>
-#include <QMutex>
 #include <QVector>
 #include <QAtomicInt>
+// #include <atomic>
 #include "qcustomplot.h"
 
 class DeviceManager;
@@ -34,19 +34,18 @@ public:
 
     /**
      * @brief 注册某个探头对应的曲线数据指针
-     * @param probeIndex 探头逻辑索引
-     * @param ampCurve   幅值曲线容器指针（key=采样序号, value=幅值mV）
-     * @param phaseCurve 相位曲线容器指针（key=采样序号, value=相位deg）
+     * @param probeIndex      探头逻辑索引
+     * @param impedanceCurve  阻抗图曲线容器指针
+     * @param ampCurve        幅值曲线容器指针
+     * @param phaseCurve      相位曲线容器指针
      *
-     * 曲线容器由外部（如 MainWindow / ProbObject）创建并持有，
-     * 本线程仅负责写入，每条曲线最多保留 MAX_CURVE_POINTS 个数据点。
+     * 调用方需将容器 capacity 预分配至 CURVE_CAPACITY，
+     * 确保 append 操作永不触发 QVector 内部 reallocate。
      */
     void registerCurveData(int probeIndex,
+                           QVector<QCPCurveData> *impedanceCurve,
                            QVector<QCPGraphData> *ampCurve,
                            QVector<QCPGraphData> *phaseCurve);
-
-    /** @brief 获取曲线数据互斥锁，主线程读取曲线数据时需加锁 */
-    QMutex *curveMutex() { return &m_curveMutex; }
 
 signals:
     /** @brief 某个探头的新数据已写入 saveData，主线程可读取并更新 UI */
@@ -58,24 +57,24 @@ protected:
     void run() override;
 
 private:
-    void appendCurvePoint(QVector<QCPGraphData> *curve, double key, double value);
-
     DeviceManager *m_deviceManager;
     ProbeManager *m_probeManager;
+    // std::atomic<unsigned int> m_running;
     QAtomicInt m_running;
 
     struct CurveRef {
-        QVector<QCPGraphData> *ampCurve = nullptr;
-        QVector<QCPGraphData> *phaseCurve = nullptr;
+        QVector<QCPCurveData> *impedanceCurve = nullptr;
+        QVector<QCPGraphData> *ampCurve       = nullptr;
+        QVector<QCPGraphData> *phaseCurve     = nullptr;
     };
     QVector<CurveRef> m_curveRefs;
-    QMutex m_curveMutex;
 
     quint64 m_sampleCounter = 0;
 
-    static constexpr int MAX_CURVE_POINTS = 10000;
-    static constexpr int MAX_BATCH_SIZE = 50;
-    static constexpr int IDLE_SLEEP_MS = 1;
+    static constexpr int CURVE_CAPACITY   = 310000; // 预分配容量，大于清除阈值确保 append 不触发扩容
+    static constexpr int CURVE_CLEAR_SIZE = 300000; // 超过此大小时 clear
+    static constexpr int MAX_BATCH_SIZE   = 50;
+    static constexpr int IDLE_SLEEP_MS    = 1;
 };
 
 #endif // DATAACQUISITIONTHREAD_H

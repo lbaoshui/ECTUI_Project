@@ -7,7 +7,6 @@
 
 #include "devicemanager.h"
 #include <QDateTime>
-#include <QMutex>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -163,7 +162,7 @@ private:
   // === 1. 身份 ===
   int m_id;        ///< 逻辑编号 (0,1,2...)
   int m_hwChannel; ///< 硬件通道号 (1-16)
-                   //   QString m_name;  ///< 显示名称
+    QString m_name;  ///< 显示名称
 
   // === 2. 激励配置 ===
   int m_excitationFreq = 10000; ///< 激励频率 (Hz)
@@ -172,9 +171,8 @@ private:
 
   // === 3. 实时数据 ===
   ProbeData *m_activeData = nullptr; // 活跃缓冲区：消费者线程实时写入
-  ProbeData *m_saveData = nullptr; // 保存缓冲区：数据满了之后，交给保存线程进行落盘
-  QMutex m_bufferMutex;             // 乒乓缓冲区交换锁
-  QDateTime m_lastUpdateTime;        // 最近一次数据更新时间
+  ProbeData *m_saveData = nullptr;  // 保存缓冲区：数据满了之后，交给保存线程进行落盘
+  QDateTime m_lastUpdateTime;       // 最近一次数据更新时间
 
   // === 4. 计算结果 ===
   float m_vpp = 0.0f;         ///< 当前峰峰值电压

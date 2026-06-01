@@ -226,7 +226,6 @@ Probe::~Probe()
 
 void Probe::swapBuffers()
 {
-    QMutexLocker lock(&m_bufferMutex);
     std::swap(m_activeData, m_saveData);
 }
 

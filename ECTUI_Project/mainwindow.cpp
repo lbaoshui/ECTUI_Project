@@ -208,7 +208,7 @@ void MainWindow::setupFirstRow()
 
     m_realImaginaryLabel = new QLabel(tr("Real: 1.0 Imaginary: 1"), this);
     m_digFilterLabel = new QLabel(tr("Dig Filter:No Filter"), this);
-    m_autoEraseLabel = new QLabel(tr("Auto erase after 408 points"), this);
+    m_autoEraseLabel = new QLabel(tr("Auto erase after 300000 points"), this);
     m_shiftLabel = new QLabel(tr("Shift X/Y:-1000/-372mV"), this);
 
     // 设置字体和颜色

@@ -24,50 +24,61 @@ DataAcquisitionThread::~DataAcquisitionThread()
 
 void DataAcquisitionThread::stop()
 {
-    m_running.store(0, std::memory_order_relaxed);
+    // m_running.store(0, std::memory_order_relaxed);
+    m_running.storeRelaxed(0);
 }
 
 bool DataAcquisitionThread::isAcquiring() const
 {
-    return m_running.load(std::memory_order_relaxed) != 0;
+    // return m_running.load(std::memory_order_relaxed) != 0;
+    return m_running.loadRelaxed() != 0;
 }
 
-// 注册探头对应的实时曲线容器（由主线程在启动采集前调用）
-// probeIndex 与 ProbeManager::allProbes() 的下标一致，run() 中按同一索引写入
-void DataAcquisitionThread::registerCurveData(int probeIndex, QVector<QCPCurveData> *phaseCurve, QVector<QCPGraphData> *ampCurve, QVector<QCPGraphData> *phaseCurve)
+void DataAcquisitionThread::registerCurveData(int probeIndex,
+                                               QVector<QCPCurveData> *impedanceCurve,
+                                               QVector<QCPGraphData> *ampCurve,
+                                               QVector<QCPGraphData> *phaseCurve)
 {
-    // 与 run() 内曲线写入共用互斥锁，避免注册与追加并发冲突
-    QMutexLocker lock(&m_curveMutex);
-    // 按需扩展引用表，保证 probeIndex 下标有效
     if (probeIndex >= m_curveRefs.size()) {
         m_curveRefs.resize(probeIndex + 1);
     }
-    // 仅保存指针，容器生命周期由调用方（如 MainWindow）管理
-    m_curveRefs[probeIndex].ampCurve = ampCurve;
-    m_curveRefs[probeIndex].phaseCurve = phaseCurve;
+
+    // 预分配容量，保证 append 永不触发 reallocate
+    if (impedanceCurve) {
+        impedanceCurve->reserve(CURVE_CAPACITY);
+    }
+    if (ampCurve) {
+        ampCurve->reserve(CURVE_CAPACITY);
+    }
+    if (phaseCurve) {
+        phaseCurve->reserve(CURVE_CAPACITY);
+    }
+
+    m_curveRefs[probeIndex].impedanceCurve = impedanceCurve;
+    m_curveRefs[probeIndex].ampCurve       = ampCurve;
+    m_curveRefs[probeIndex].phaseCurve     = phaseCurve;
 }
 
 void DataAcquisitionThread::run()
 {
-    m_running.store(1, std::memory_order_relaxed);
+    // m_running.store(1, std::memory_order_relaxed);
+    m_running.storeRelaxed(1);
     m_sampleCounter = 0;
 
-    while (m_running.load(std::memory_order_relaxed)) {
+    while (m_running.loadRelaxed()) {
         bool gotData = false;
         const auto probes = m_probeManager->allProbes();
 
-        for (int i = 0; i < probes.size(); ++i) {
+        for (int i = 0; i < probes.size(); ++i) {   // 遍历所有探头
             Probe *probe = probes[i];
             if (!probe || !probe->isEnabled())
                 continue;
 
-            // 硬件通道号 (1-16) → 环形缓冲区索引 (0-7)
             const int hwChannel = probe->hardwareChannel();
             const int bufferIndex = hwChannel - 1;
             if (bufferIndex < 0 || bufferIndex >= DeviceManager::AD7768_CHANNELS)
                 continue;
 
-            // 从无锁环形缓冲区批量取帧
             auto packets = m_deviceManager->takeLockinPackets(bufferIndex, MAX_BATCH_SIZE);
             if (packets.isEmpty())
                 continue;
@@ -75,45 +86,68 @@ void DataAcquisitionThread::run()
 
             ProbeData *active = probe->activeData();
 
+            // 提前取出曲线指针，避免每次 packet 都去 vector 里索引
+            QVector<QCPCurveData> *impCurve = nullptr;
+            QVector<QCPGraphData> *ampCurve = nullptr;
+            QVector<QCPGraphData> *phaseCurve = nullptr;
+            if (i < m_curveRefs.size()) {
+                impCurve   = m_curveRefs[i].impedanceCurve;
+                ampCurve   = m_curveRefs[i].ampCurve;
+                phaseCurve = m_curveRefs[i].phaseCurve;
+            }
+
             for (const auto &packet : packets) {
                 const int nPoints = packet.ampMv.size();
                 if (nPoints <= 0)
                     continue;
 
-                // 1. 写入 Probe 的活跃乒乓缓冲区（批量追加）
+                // 1. 写入 Probe 的活跃乒乓缓冲区
                 if (active) {
                     active->append(packet.ampMv, packet.phaseDeg);
                 }
 
                 // 2. 同步写入曲线数据容器
-                {
-                    QMutexLocker lock(&m_curveMutex);
-                    if (i < m_curveRefs.size()) {
-                        auto *ampCurve = m_curveRefs[i].ampCurve;
-                        auto *phaseCurve = m_curveRefs[i].phaseCurve;
+                for (int j = 0; j < nPoints; ++j) {
+                    const double key = static_cast<double>(m_sampleCounter++);
 
-                        for (int j = 0; j < nPoints; ++j) {
-                            const double key = static_cast<double>(m_sampleCounter++);
-                            if (ampCurve) {
-                                appendCurvePoint(ampCurve, key,
-                                                 static_cast<double>(packet.ampMv[j]));
-                            }
-                            if (phaseCurve) {
-                                appendCurvePoint(phaseCurve, key,
-                                                 static_cast<double>(packet.phaseDeg[j]));
-                            }
-                        }
+                    if (ampCurve) {
+                        ampCurve->append(QCPGraphData(
+                            key, static_cast<double>(packet.ampMv[j])));
+                    }
+                    if (phaseCurve) {
+                        phaseCurve->append(QCPGraphData(
+                            key, static_cast<double>(packet.phaseDeg[j])));
+                    }
+                    if (impCurve) {
+                        impCurve->append(QCPCurveData(
+                            key, // t: 排序键
+                            static_cast<double>(packet.ampMv[j]), // key: 实部
+                            static_cast<double>(packet.phaseDeg[j]) // value: 虚部
+                        ));
                     }
                 }
             }
 
-            // 乒乓缓冲区切换：将写满的 activeData 与 saveData 交换
-            // 主线程收到 dataReady 信号后即可安全读取 saveData
+            // 乒乓缓冲区切换
             if (active && !active->isEmpty()) {
                 probe->swapBuffers();
             }
 
             emit dataReady(i);
+        }
+
+        // ── for 循环结束后：检查曲线数据容器是否超过阈值 ──
+        for (int i = 0; i < m_curveRefs.size(); ++i) {
+            auto &ref = m_curveRefs[i];
+            if (ref.ampCurve && ref.ampCurve->size() > CURVE_CLEAR_SIZE) {
+                ref.ampCurve->clear();
+            }
+            if (ref.phaseCurve && ref.phaseCurve->size() > CURVE_CLEAR_SIZE) {
+                ref.phaseCurve->clear();
+            }
+            if (ref.impedanceCurve && ref.impedanceCurve->size() > CURVE_CLEAR_SIZE) {
+                ref.impedanceCurve->clear();
+            }
         }
 
         if (!gotData) {
@@ -122,13 +156,4 @@ void DataAcquisitionThread::run()
     }
 
     emit acquisitionStopped();
-}
-
-void DataAcquisitionThread::appendCurvePoint(QVector<QCPGraphData> *curve,
-                                              double key, double value)
-{
-    curve->append(QCPGraphData(key, value));
-    if (curve->size() > MAX_CURVE_POINTS) {
-        curve->remove(0, curve->size() - MAX_CURVE_POINTS);
-    }
 }

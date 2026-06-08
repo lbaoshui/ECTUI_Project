@@ -5,6 +5,7 @@
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QLineEdit>
 
 #include <cmath>
@@ -24,9 +25,11 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , m_deviceManager(new DeviceManager(this))        // 初始化设备管理器
     , m_probeManager(new ProbeManager(this))          // 初始化探头管理器
+    , m_saveManager(new SaveManager(m_probeManager, this)) // 初始化数据保存管理器
+    , m_acquisitionThread(new DataAcquisitionThread(m_deviceManager, m_probeManager, this))
 {
     ui->setupUi(this);
-    m_probeManager->setProbeCount(8);  // 默认 8 个探头通道   
+    m_probeManager->setProbeCount(8);  // 默认 8 个探头通道
     setupUI();
 }
 
@@ -816,6 +819,53 @@ void MainWindow::setupConnections()
                                          .arg(m_devicePort)
                                          .arg(message));
             });
+
+    // ── SaveManager 相关连接 ─────────────────────
+
+    // 保存按钮：手动设置数据目录
+    connect(m_saveDataBtn, &QPushButton::clicked, this, [this]() {
+        // 使用当前 exe 目录下的 data 文件夹
+        QString folder = QDir::currentPath() + "/data";
+        m_saveManager->setDataFolder(folder);
+        qDebug() << "[MainWindow] 数据保存目录:" << folder;
+    });
+
+    connect(m_stackSaveDataBtn, &QPushButton::clicked, m_saveDataBtn, &QPushButton::clicked);
+
+    // 新文件创建提示
+    connect(m_saveManager, &SaveManager::newFileCreated, this,
+            [this](int probeIndex, const QString &filePath) {
+                qDebug() << "[MainWindow] 新建保存文件:" << filePath;
+            });
+
+    // 保存错误提示
+    connect(m_saveManager, &SaveManager::saveError, this,
+            [this](const QString &msg) {
+                qWarning() << "[MainWindow] 保存错误:" << msg;
+            });
+
+    // ── DataAcquisitionThread → SaveManager 连接 ──
+    connect(m_acquisitionThread, &DataAcquisitionThread::saveDataReady,
+            m_saveManager, &SaveManager::onSaveDataReady);
+
+    // ── 采集开始/停止按钮（toggle 模式） ──
+    connect(m_stackStartAcquisitionBtn, &QPushButton::clicked, this, [this]() {
+        if (m_acquisitionThread->isAcquiring()) {
+            // 正在采集 → 停止
+            m_acquisitionThread->stop();
+            m_saveManager->onAcquisitionStopped();
+        } else {
+            // 未采集 → 开始
+            m_saveManager->onAcquisitionStarted();
+            m_acquisitionThread->start();
+            m_stackStartAcquisitionBtn->setText(tr("停止\n采集"));
+        }
+    });
+
+    // ── 采集线程完全退出后复位按钮文字 ──
+    connect(m_acquisitionThread, &DataAcquisitionThread::acquisitionStopped, this, [this]() {
+        m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
+    });
 }
 
 /**

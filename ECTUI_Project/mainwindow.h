@@ -31,6 +31,8 @@
 #include "devicemanager.h"
 #include "probe.h"
 #include "probemanager.h"
+#include "savemanager.h"
+#include "dataacquisitionthread.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -183,6 +185,8 @@ private:
     QString m_selectedInterfaceId;
     DeviceManager *m_deviceManager;
     ProbeManager *m_probeManager;
+    SaveManager *m_saveManager = nullptr;
+    DataAcquisitionThread *m_acquisitionThread = nullptr;
     QString m_deviceHost;
     quint16 m_devicePort = 8899;
     bool m_deviceConnectionPending = false;

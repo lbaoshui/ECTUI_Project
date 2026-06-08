@@ -128,9 +128,10 @@ void DataAcquisitionThread::run()
                 }
             }
 
-            // 乒乓缓冲区切换
-            if (active && !active->isEmpty()) {
+            // 乒乓缓冲区切换 —— 仅当 active 达到保存阈值时才 swap
+            if (active && active->ampSize() >= SAVE_THRESHOLD) {
                 probe->swapBuffers();
+                emit saveDataReady(i);
             }
 
             emit dataReady(i);

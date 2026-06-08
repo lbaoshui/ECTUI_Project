@@ -21,7 +21,8 @@ SOURCES += \
     probe.cpp \
     probeconfigdialog.cpp \
     probemanager.cpp \
-    qcustomplot.cpp
+    qcustomplot.cpp \
+    savemanager.cpp
 
 HEADERS += \
     customplot.h \
@@ -33,7 +34,8 @@ HEADERS += \
     probeconfigdialog.h \
     probemanager.h \
     qcustomplot.h \
-    phaserotator.h
+    phaserotator.h \
+    savemanager.h
 
 FORMS += \
     mainwindow.ui

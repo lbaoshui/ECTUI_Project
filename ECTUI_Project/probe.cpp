@@ -227,6 +227,10 @@ Probe::~Probe()
 void Probe::swapBuffers()
 {
     std::swap(m_activeData, m_saveData);
+    // 清空新的 active 缓冲区，确保每轮累积从零开始
+    if (m_activeData) {
+        m_activeData->clear();
+    }
 }
 
 // 设置对应的硬件通道，按照该硬件通道读取数据

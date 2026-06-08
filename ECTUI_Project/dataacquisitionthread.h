@@ -50,6 +50,8 @@ public:
 signals:
     /** @brief 某个探头的新数据已写入 saveData，主线程可读取并更新 UI */
     void dataReady(int probeIndex);
+    /** @brief active 缓冲区达到保存阈值，saveData 中已有完整数据待落盘 */
+    void saveDataReady(int probeIndex);
     /** @brief 采集线程已完全停止 */
     void acquisitionStopped();
 
@@ -71,6 +73,7 @@ private:
 
     quint64 m_sampleCounter = 0;
 
+    static constexpr int SAVE_THRESHOLD   = 100000; // active 缓冲区达到此点数时触发 swap 和保存
     static constexpr int CURVE_CAPACITY   = 310000; // 预分配容量，大于清除阈值确保 append 不触发扩容
     static constexpr int CURVE_CLEAR_SIZE = 300000; // 超过此大小时 clear
     static constexpr int MAX_BATCH_SIZE   = 50;

@@ -239,7 +239,11 @@ bool DeviceManager::sendSampleRateConfig(SampleRate rate)
         return false;
     }
 
-    return m_socket->waitForBytesWritten(1000);
+    const bool ok = m_socket->waitForBytesWritten(1000);
+    if (ok) {
+        m_currentSampleRate = rate;
+    }
+    return ok;
 }
 
 // 开启采样操作

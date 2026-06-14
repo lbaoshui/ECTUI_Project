@@ -57,6 +57,8 @@ public:
     /** @brief 在已有滤波链末尾追加一级（HP+LP 级联即带通） */
     void addFilterStage(int probeIndex, FilterType type,
                         float cutoffHz, float sampleRateHz, float q = 0.7071f);
+    /** @brief 获取当前设备采样率 (Hz)，用于滤波器系数计算 */
+    float sampleRateHz() const;
     /** @brief 清除指定探头的滤波链（恢复直通） */
     void removeFilter(int probeIndex);
 

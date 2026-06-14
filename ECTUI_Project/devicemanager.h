@@ -194,6 +194,9 @@ public:
      */
     bool sendSampleRateConfig(SampleRate rate);
 
+    /** @brief 获取最近一次成功设置的采样率，默认为 SR_100K */
+    SampleRate currentSampleRate() const { return m_currentSampleRate; }
+
     /**
      * @brief 发送启动采样命令
      *
@@ -301,6 +304,7 @@ private:
     // 唯一的底层通信对象，DeviceManager 对外隐藏 socket 细节。
     QTcpSocket       *m_socket;
     ConnectionState   m_connState;
+    SampleRate        m_currentSampleRate = SampleRate::SR_100K;
     QByteArray        m_receiveBuffer;    // TCP 粘包/半包缓冲
     bool              m_hasLastNewPacketIndex = false;
     quint32           m_lastNewPacketIndex = 0;

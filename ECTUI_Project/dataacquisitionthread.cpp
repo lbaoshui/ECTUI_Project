@@ -250,3 +250,8 @@ void DataAcquisitionThread::removeFilter(int probeIndex)
         m_phaseFilters[probeIndex].clear();
     }
 }
+
+float DataAcquisitionThread::sampleRateHz() const
+{
+    return static_cast<float>(static_cast<quint32>(m_deviceManager->currentSampleRate()));
+}

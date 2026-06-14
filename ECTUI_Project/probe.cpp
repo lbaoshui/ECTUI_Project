@@ -369,3 +369,25 @@ float Probe::computeVppInternal() const
     const float topAvg = topSum / sampleCount;
     return (topAvg - bottomAvg) * kVppScale;
 }
+
+// ── 7. 滤波配置 setter 实现 ─────────────────────
+
+void Probe::setFilterLpEnabled(bool enabled)
+{
+    m_filterLpEnabled = enabled;
+}
+
+void Probe::setFilterLpCutoffHz(float hz)
+{
+    m_filterLpCutoffHz = hz;
+}
+
+void Probe::setFilterHpEnabled(bool enabled)
+{
+    m_filterHpEnabled = enabled;
+}
+
+void Probe::setFilterHpCutoffHz(float hz)
+{
+    m_filterHpCutoffHz = hz;
+}

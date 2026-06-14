@@ -11,6 +11,7 @@
 #include <QLabel>
 
 class ProbeManager;
+class DataAcquisitionThread;
 
 /**
  * @brief 探头通道参数配置对话框
@@ -28,7 +29,9 @@ public:
      * @param probeManager 探头管理器，用于读取/写入探头配置
      * @param parent 父控件
      */
-    explicit ProbeConfigDialog(ProbeManager *probeManager, QWidget *parent = nullptr);
+    explicit ProbeConfigDialog(ProbeManager *probeManager,
+                               DataAcquisitionThread *acqThread = nullptr,
+                               QWidget *parent = nullptr);
 
 private slots:
     /**
@@ -73,10 +76,29 @@ private:
         QSpinBox *excPhaseSpinBox;      ///< 激励相位 (deg)
         QSpinBox *excAmpSpinBox;        ///< 激励幅度 (%)
         QCheckBox *enabledCheckBox;     ///< 启用开关
+        QCheckBox *filterLpCheckBox;    ///< 低通使能
+        QSpinBox *filterLpCutoffSpinBox; ///< 低通截止频率 (Hz)
+        QCheckBox *filterHpCheckBox;    ///< 高通使能
+        QSpinBox *filterHpCutoffSpinBox; ///< 高通截止频率 (Hz)
+    };
+
+    /** @brief 探头参数的快照，用于在数量变更时保留用户修改 */  
+    struct ProbeStateSnapshot {
+        int hwChannel = 0;
+        int excFreq = 10000;
+        int excPhase = 0;
+        int excAmp = 60;
+        bool enabled = true;
+        bool lpEnabled = false;
+        int lpCutoff = 5000;
+        bool hpEnabled = false;
+        int hpCutoff = 100;
     };
 
     ProbeManager *m_probeManager;            ///< 探头管理器（外部传入，不持有所有权）
+    DataAcquisitionThread *m_acqThread;      ///< 采集线程（外部传入，用于配置滤波器）
     QSpinBox *m_probeCountSpinBox;           ///< 探头数量选择器
+    QVector<ProbeStateSnapshot> m_savedStates; ///< 跨重建累积的快照（索引=探头序号）
     QScrollArea *m_scrollArea;               ///< 参数组滚动区域
     QWidget *m_probeGroupsContainer;         ///< 参数组容器
     QVBoxLayout *m_probeGroupsLayout;        ///< 参数组垂直布局

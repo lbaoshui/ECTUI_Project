@@ -14,6 +14,7 @@
 #include <QVector>
 #include <QAtomicInt>
 #include <atomic>
+#include "filter.h"
 #include "qcustomplot.h"
 
 class DeviceManager;
@@ -50,6 +51,15 @@ public:
                            QVector<QCPGraphData> *ampCurve,
                            QVector<QCPGraphData> *phaseCurve);
 
+    /** @brief 为指定探头配置单级滤波器（会先清除已有滤波链） */
+    void configureFilter(int probeIndex, FilterType type,
+                         float cutoffHz, float sampleRateHz, float q = 0.7071f);
+    /** @brief 在已有滤波链末尾追加一级（HP+LP 级联即带通） */
+    void addFilterStage(int probeIndex, FilterType type,
+                        float cutoffHz, float sampleRateHz, float q = 0.7071f);
+    /** @brief 清除指定探头的滤波链（恢复直通） */
+    void removeFilter(int probeIndex);
+
 signals:
     /** @brief 某个探头的新数据已写入 saveData，主线程可读取并更新 UI */
     void dataReady(int probeIndex);
@@ -74,6 +84,9 @@ private:
         QVector<QCPGraphData> *phaseCurve     = nullptr;
     };
     QVector<CurveRef> m_curveRefs;
+
+    QVector<FilterChain> m_ampFilters;    // 每探头幅值滤波链(即可在现有滤波链路的后面继续添加滤波节点)
+    QVector<FilterChain> m_phaseFilters;  // 每探头相位滤波链
 
     quint64 m_sampleCounter = 0;
 

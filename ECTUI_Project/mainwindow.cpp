@@ -1430,7 +1430,7 @@ void MainWindow::onCancelClicked()
  */
 void MainWindow::onMoreParametersClicked()
 {
-    ProbeConfigDialog dialog(m_probeManager, this);
+    ProbeConfigDialog dialog(m_probeManager, m_acquisitionThread, this);
     dialog.exec();
 }
 

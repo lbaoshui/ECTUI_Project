@@ -140,6 +140,14 @@ void DataAcquisitionThread::run()
                         phaseVal = x * sinA + y * cosA;
                     }
 
+                    // 滤波（仅作用于曲线显示数据）
+                    if (i < m_ampFilters.size() && !m_ampFilters[i].isEmpty()) {
+                        ampVal = m_ampFilters[i].process(ampVal);
+                    }
+                    if (i < m_phaseFilters.size() && !m_phaseFilters[i].isEmpty()) {
+                        phaseVal = m_phaseFilters[i].process(phaseVal);
+                    }
+
                     if (ampCurve) {
                         ampCurve->append(QCPGraphData(
                             key, static_cast<double>(ampVal)));
@@ -187,4 +195,58 @@ void DataAcquisitionThread::run()
     }
 
     emit acquisitionStopped();
+}
+
+// 配置单级滤波器：先清空该探头已有的滤波链，再添加一级新滤波器。
+// 幅值和相位各自独立维护一条链，但配置时保持同步（同类型、同参数）。
+// 示例：thread->configureFilter(0, FilterType::LowPass, 5000, 100000);
+void DataAcquisitionThread::configureFilter(int probeIndex, FilterType type,
+                                            float cutoffHz, float sampleRateHz, float q)
+{
+    // 确保 amp/phase 的 QVector 长度覆盖到该探头索引
+    if (probeIndex >= m_ampFilters.size()) {
+        m_ampFilters.resize(probeIndex + 1);
+    }
+    if (probeIndex >= m_phaseFilters.size()) {
+        m_phaseFilters.resize(probeIndex + 1);
+    }
+
+    // 清空旧链 → 添加新的一级
+    m_ampFilters[probeIndex].clear();
+    m_ampFilters[probeIndex].addStage(type, cutoffHz, sampleRateHz, q);
+
+    m_phaseFilters[probeIndex].clear();
+    m_phaseFilters[probeIndex].addStage(type, cutoffHz, sampleRateHz, q);
+}
+
+// 在现有滤波链末尾追加一级（不清除已有的）。
+// 典型用法：先 configureFilter 设高通，再 addFilterStage 追加低通 → 形成带通。
+// 示例：
+//   thread->configureFilter(0, FilterType::HighPass, 100, 100000);   // 第1级: HP 100Hz
+//   thread->addFilterStage(0, FilterType::LowPass, 5000, 100000);     // 第2级: LP 5000Hz
+//   数据流: 原始数据 → HP(100Hz) → LP(5000Hz) → 曲线
+void DataAcquisitionThread::addFilterStage(int probeIndex, FilterType type,
+                                           float cutoffHz, float sampleRateHz, float q)
+{
+    if (probeIndex >= m_ampFilters.size()) {
+        m_ampFilters.resize(probeIndex + 1);
+    }
+    if (probeIndex >= m_phaseFilters.size()) {
+        m_phaseFilters.resize(probeIndex + 1);
+    }
+
+    m_ampFilters[probeIndex].addStage(type, cutoffHz, sampleRateHz, q);
+    m_phaseFilters[probeIndex].addStage(type, cutoffHz, sampleRateHz, q);
+}
+
+// 清除指定探头的全部滤波级，恢复原始数据直通（不过滤）。
+// 注意：clear() 后 FilterChain::isEmpty() 为 true，run() 中会跳过滤波分支。
+void DataAcquisitionThread::removeFilter(int probeIndex)
+{
+    if (probeIndex < m_ampFilters.size()) {
+        m_ampFilters[probeIndex].clear();
+    }
+    if (probeIndex < m_phaseFilters.size()) {
+        m_phaseFilters[probeIndex].clear();
+    }
 }

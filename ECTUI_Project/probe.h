@@ -144,6 +144,17 @@ public:
   void updateVpp();         // 从 rawData 重新计算 Vpp
   void updateSensitivity(); // 基于基线计算灵敏度
 
+  // ── 7. 滤波配置 ─────────────────────────
+  bool filterLpEnabled() const { return m_filterLpEnabled; }
+  void setFilterLpEnabled(bool enabled);
+  float filterLpCutoffHz() const { return m_filterLpCutoffHz; }
+  void setFilterLpCutoffHz(float hz);
+
+  bool filterHpEnabled() const { return m_filterHpEnabled; }
+  void setFilterHpEnabled(bool enabled);
+  float filterHpCutoffHz() const { return m_filterHpCutoffHz; }
+  void setFilterHpCutoffHz(float hz);
+
 signals:
   void enabledChanged(bool enabled); ///< 探头启用/禁用状态变化
   void dataUpdated();                ///< 原始数据已更新
@@ -183,6 +194,12 @@ private:
   bool m_enabled = true;      ///< 是否启用
   bool m_hasFault = false;    ///< 是否存在数据异常
   bool m_baselineSet = false; ///< 是否已采集基线
+
+  // === 6. 滤波配置（持久化在 Probe 中，对话框/采集线程均可读写） ===
+  bool m_filterLpEnabled = false;
+  float m_filterLpCutoffHz = 5000.0f;
+  bool m_filterHpEnabled = false;
+  float m_filterHpCutoffHz = 100.0f;
 };
 
 #endif // PROBE_H

@@ -1,6 +1,8 @@
 #include "probeconfigdialog.h"
 #include "probemanager.h"
 #include "probe.h"
+#include "dataacquisitionthread.h"
+#include "filter.h"
 
 #include <QFormLayout>
 #include <QGridLayout>
@@ -14,9 +16,12 @@
  *
  * 设置窗口属性后依次调用 setupUI() 搭建界面、loadFromProbeManager() 加载现有配置。
  */
-ProbeConfigDialog::ProbeConfigDialog(ProbeManager *probeManager, QWidget *parent)
+ProbeConfigDialog::ProbeConfigDialog(ProbeManager *probeManager,
+                                   DataAcquisitionThread *acqThread,
+                                   QWidget *parent)
     : QDialog(parent)
     , m_probeManager(probeManager)
+    , m_acqThread(acqThread)
 {
     setWindowTitle(tr("Probe Channel Configuration"));
     setMinimumSize(620, 520);
@@ -159,6 +164,31 @@ void ProbeConfigDialog::loadFromProbeManager()
         w.excPhaseSpinBox->setValue(probe->excitationPhase());
         w.excAmpSpinBox->setValue(probe->excitationAmp());
         w.enabledCheckBox->setChecked(probe->isEnabled());
+
+        // 从 Probe 恢复滤波配置（对话框再次打开时不丢失）
+        w.filterLpCheckBox->setChecked(probe->filterLpEnabled());
+        w.filterLpCutoffSpinBox->setValue(static_cast<int>(probe->filterLpCutoffHz()));
+        w.filterHpCheckBox->setChecked(probe->filterHpEnabled());
+        w.filterHpCutoffSpinBox->setValue(static_cast<int>(probe->filterHpCutoffHz()));
+    }
+
+    // 初次加载后，将 Probe 中的持久化值写入快照，       
+    // 确保后续数量变更时从正确值恢复（而非从重建时的默认值）。 
+    if (count > m_savedStates.size()) {
+        m_savedStates.resize(count);
+    }
+    for (int i = 0; i < count && i < m_probeGroupWidgets.size(); ++i) {
+        const auto &w = m_probeGroupWidgets[i];
+        auto &s = m_savedStates[i];
+        s.hwChannel = w.hwChannelSpinBox->value();
+        s.excFreq   = w.excFreqSpinBox->value();
+        s.excPhase  = w.excPhaseSpinBox->value();
+        s.excAmp    = w.excAmpSpinBox->value();
+        s.enabled   = w.enabledCheckBox->isChecked();
+        s.lpEnabled = w.filterLpCheckBox->isChecked();
+        s.lpCutoff  = w.filterLpCutoffSpinBox->value();
+        s.hpEnabled = w.filterHpCheckBox->isChecked();
+        s.hpCutoff  = w.filterHpCutoffSpinBox->value();
     }
 }
 
@@ -177,11 +207,30 @@ void ProbeConfigDialog::onProbeCountChanged(int count)
  * @brief 销毁旧参数组并创建新数量的探头配置卡片
  * @param count 目标探头通道数量
  *
- * 先移除 m_probeGroupsLayout 内所有旧 GroupBox 和底部 stretch，
- * 再逐个创建含硬件通道、激励参数及启用开关的 QGroupBox 卡片。
+ * 先保存当前 UI 中已修改的参数，再销毁旧控件并重建。
+ * 重建后将保存的参数恢复到索引匹配的探头（避免修改探头数量后已改参数丢失）。
  */
 void ProbeConfigDialog::rebuildProbeGroups(int count)
 {
+    // ── 1. 将当前 UI 状态写入成员快照（跨多次重建累积保留） ──
+    if (m_probeGroupWidgets.size() > m_savedStates.size()) {
+        m_savedStates.resize(m_probeGroupWidgets.size());
+    }
+    for (int i = 0; i < m_probeGroupWidgets.size(); ++i) {
+        const auto &w = m_probeGroupWidgets[i];
+        auto &s = m_savedStates[i];
+        s.hwChannel = w.hwChannelSpinBox->value();
+        s.excFreq   = w.excFreqSpinBox->value();
+        s.excPhase  = w.excPhaseSpinBox->value();
+        s.excAmp    = w.excAmpSpinBox->value();
+        s.enabled   = w.enabledCheckBox->isChecked();
+        s.lpEnabled = w.filterLpCheckBox->isChecked();
+        s.lpCutoff  = w.filterLpCutoffSpinBox->value();
+        s.hpEnabled = w.filterHpCheckBox->isChecked();
+        s.hpCutoff  = w.filterHpCutoffSpinBox->value();
+    }
+
+    // ── 2. 销毁旧控件 ──
     for (auto &w : m_probeGroupWidgets) {
         m_probeGroupsLayout->removeWidget(w.groupBox);
         delete w.groupBox;
@@ -194,6 +243,7 @@ void ProbeConfigDialog::rebuildProbeGroups(int count)
         delete stretchItem;
     }
 
+    // ── 3. 重建新控件（先用默认值创建） ──
     for (int i = 0; i < count; ++i) {
         ProbeGroupWidgets w;
         w.groupBox = new QGroupBox(tr("探头通道 %1").arg(i + 1), m_probeGroupsContainer);
@@ -261,9 +311,81 @@ void ProbeConfigDialog::rebuildProbeGroups(int count)
         grid->addWidget(ampLabel, 3, 0);
         grid->addWidget(w.excAmpSpinBox, 3, 1);
 
+        // ── 第五行：数字滤波（LP 和 HP 可独立使能，同时勾选即带通） ──
+        QLabel *filterLabel = new QLabel(tr("数字滤波:"), w.groupBox);
+        filterLabel->setStyleSheet("QLabel { font-weight: normal; color: #cccccc; }");
+
+        // 低通组
+        w.filterLpCheckBox = new QCheckBox(tr("低通"), w.groupBox);
+        w.filterLpCheckBox->setChecked(false);
+        w.filterLpCutoffSpinBox = new QSpinBox(w.groupBox);
+        w.filterLpCutoffSpinBox->setRange(1, 50000);
+        w.filterLpCutoffSpinBox->setValue(5000);
+        w.filterLpCutoffSpinBox->setFixedWidth(100);
+        w.filterLpCutoffSpinBox->setSuffix(tr(" Hz"));
+        w.filterLpCutoffSpinBox->setEnabled(false);
+        QObject::connect(w.filterLpCheckBox, &QCheckBox::toggled,
+                         w.filterLpCutoffSpinBox, &QSpinBox::setEnabled);
+
+        // 高通组
+        w.filterHpCheckBox = new QCheckBox(tr("高通"), w.groupBox);
+        w.filterHpCheckBox->setChecked(false);
+        w.filterHpCutoffSpinBox = new QSpinBox(w.groupBox);
+        w.filterHpCutoffSpinBox->setRange(1, 50000);
+        w.filterHpCutoffSpinBox->setValue(100);
+        w.filterHpCutoffSpinBox->setFixedWidth(100);
+        w.filterHpCutoffSpinBox->setSuffix(tr(" Hz"));
+        w.filterHpCutoffSpinBox->setEnabled(false);
+        QObject::connect(w.filterHpCheckBox, &QCheckBox::toggled,
+                         w.filterHpCutoffSpinBox, &QSpinBox::setEnabled);
+
+        grid->addWidget(filterLabel, 4, 0);
+        grid->addWidget(w.filterLpCheckBox, 4, 1);
+        grid->addWidget(w.filterLpCutoffSpinBox, 4, 2);
+        grid->addWidget(w.filterHpCheckBox, 4, 3);
+        grid->addWidget(w.filterHpCutoffSpinBox, 4, 4);
+
         m_probeGroupWidgets.append(w);
         m_probeGroupsLayout->addWidget(w.groupBox);
     }
+
+    // ── 4. 从成员快照恢复 UI 状态（跨多次数量变更累积保留） ──
+    //     初次打开时 m_savedStates 为空，随后由 loadFromProbeManager 从 Probe 加载。
+    //     快照只增不减：count 大于快照大小时，新增条目用默认值填充；
+    //     count 小于快照大小时，只恢复前 count 个，其余保留在快照中。
+    const int restoreCount = qMin(count, m_savedStates.size());
+    for (int i = 0; i < restoreCount; ++i) {
+        const auto &s = m_savedStates[i];
+        auto &w = m_probeGroupWidgets[i];
+        w.hwChannelSpinBox->setValue(s.hwChannel);
+        w.excFreqSpinBox->setValue(s.excFreq);
+        w.excPhaseSpinBox->setValue(s.excPhase);
+        w.excAmpSpinBox->setValue(s.excAmp);
+        w.enabledCheckBox->setChecked(s.enabled);
+        w.filterLpCheckBox->setChecked(s.lpEnabled);
+        w.filterLpCutoffSpinBox->setValue(s.lpCutoff);
+        w.filterHpCheckBox->setChecked(s.hpEnabled);
+        w.filterHpCutoffSpinBox->setValue(s.hpCutoff);
+    }
+
+    // // ── 5. 快照只增不减：新增通道的默认值同步到快照尾部 ──
+    // if (count > m_savedStates.size()) {
+    //     const int oldSize = m_savedStates.size();
+    //     m_savedStates.resize(count);
+    //     for (int i = oldSize; i < count; ++i) {
+    //         const auto &w = m_probeGroupWidgets[i];
+    //         auto &s = m_savedStates[i];
+    //         s.hwChannel = w.hwChannelSpinBox->value();
+    //         s.excFreq   = w.excFreqSpinBox->value();
+    //         s.excPhase  = w.excPhaseSpinBox->value();
+    //         s.excAmp    = w.excAmpSpinBox->value();
+    //         s.enabled   = w.enabledCheckBox->isChecked();
+    //         s.lpEnabled = w.filterLpCheckBox->isChecked();
+    //         s.lpCutoff  = w.filterLpCutoffSpinBox->value();
+    //         s.hpEnabled = w.filterHpCheckBox->isChecked();
+    //         s.hpCutoff  = w.filterHpCutoffSpinBox->value();
+    //     }
+    // }
 
     // 添加底部弹簧，使参数组卡片紧凑靠上排列
     m_probeGroupsLayout->addStretch();
@@ -289,6 +411,38 @@ void ProbeConfigDialog::onApplyClicked()
                              w.excPhaseSpinBox->value(),
                              w.excAmpSpinBox->value());
         probe->setEnabled(w.enabledCheckBox->isChecked());
+
+        // 滤波配置持久化到 Probe（下次打开对话框时恢复）
+        probe->setFilterLpEnabled(w.filterLpCheckBox->isChecked());
+        probe->setFilterLpCutoffHz(static_cast<float>(w.filterLpCutoffSpinBox->value()));
+        probe->setFilterHpEnabled(w.filterHpCheckBox->isChecked());
+        probe->setFilterHpCutoffHz(static_cast<float>(w.filterHpCutoffSpinBox->value()));
+    }
+
+    // 将滤波配置写入采集线程（如果传入了采集线程指针）
+    if (m_acqThread) {
+        constexpr float kSampleRateHz = 100000.0f;  // 采样率，与设备实际采样率保持一致
+        for (int i = 0; i < count && i < m_probeGroupWidgets.size(); ++i) {
+            const auto &w = m_probeGroupWidgets[i];
+            const bool useLp = w.filterLpCheckBox->isChecked();
+            const bool useHp = w.filterHpCheckBox->isChecked();
+
+            if (!useLp && !useHp) {
+                m_acqThread->removeFilter(i);
+            } else if (useLp && !useHp) {
+                m_acqThread->configureFilter(i, FilterType::LowPass,
+                    static_cast<float>(w.filterLpCutoffSpinBox->value()), kSampleRateHz);
+            } else if (!useLp && useHp) {
+                m_acqThread->configureFilter(i, FilterType::HighPass,
+                    static_cast<float>(w.filterHpCutoffSpinBox->value()), kSampleRateHz);
+            } else {
+                // LP + HP → 带通：先 HP 滤低频漂移，再 LP 滤高频噪声
+                m_acqThread->configureFilter(i, FilterType::HighPass,
+                    static_cast<float>(w.filterHpCutoffSpinBox->value()), kSampleRateHz);
+                m_acqThread->addFilterStage(i, FilterType::LowPass,
+                    static_cast<float>(w.filterLpCutoffSpinBox->value()), kSampleRateHz);
+            }
+        }
     }
 
     accept();

@@ -35,7 +35,9 @@ SaveWorker::~SaveWorker()
     m_files.clear();
 }
 
-void SaveWorker::openFiles(const QString &folder, const QHash<int, QString> &fileMap)
+void SaveWorker::openFiles(const QString &folder,
+                           const QHash<int, QString> &fileMap,
+                           const QHash<int, ProbeFileMeta> &metaMap)
 {
     // 确保目录存在
     QDir dir(folder);
@@ -64,11 +66,22 @@ void SaveWorker::openFiles(const QString &folder, const QHash<int, QString> &fil
             }
         }
 
-        // 以 Append 模式打开，确保持续采集时数据写入同一文件
+        // 以 WriteOnly 模式打开（新文件，写入元数据头）
         FileHandle handle;
         handle.file = new QFile(fullPath);
-        if (handle.file->open(QIODevice::WriteOnly | QIODevice::Append)) {
+        if (handle.file->open(QIODevice::WriteOnly)) {
             handle.stream = new QTextStream(handle.file);
+
+            // 写入元数据头部注释行
+            if (metaMap.contains(probeIndex)) {
+                const auto &meta = metaMap[probeIndex];
+                if (meta.balanceSet) {
+                    *handle.stream << "#Balance:" << meta.balanceAmp
+                                   << "," << meta.balancePhase << "\n";
+                }
+                *handle.stream << "#Rotation:" << meta.rotationAngleDeg << "\n";
+            }
+
             m_files[probeIndex] = handle;
             qDebug() << "[SaveWorker] file opened:" << fullPath;
             emit fileOpened(probeIndex, fullPath);
@@ -183,22 +196,30 @@ void SaveManager::onAcquisitionStarted()
     m_isAcquiring = true;
     m_currentFiles.clear();
 
-    // 为所有已启用的探头生成带时间戳的文件名
+    // 为所有已启用的探头生成带时间戳的文件名，同时收集元数据
     const auto probes = m_probeManager->allProbes();
     QHash<int, QString> fileMap;
+    QHash<int, ProbeFileMeta> metaMap;
     for (int i = 0; i < probes.size(); ++i) {
         if (probes[i] && probes[i]->isEnabled()) {
             const QString fileName = generateFileName(i);
             m_currentFiles[i] = fileName;
             fileMap[i] = fileName;
             emit newFileCreated(i, m_dataFolder + "/" + fileName);
+
+            ProbeFileMeta meta;
+            meta.balanceAmp   = probes[i]->balanceAmp();
+            meta.balancePhase = probes[i]->balancePhase();
+            meta.balanceSet   = probes[i]->isBalanceSet();
+            meta.rotationAngleDeg = probes[i]->rotationAngle();
+            metaMap[i] = meta;
         }
     }
 
     // 通过函数对象跨线程调用（编译期类型检查，无需 qRegisterMetaType）
     const QString folder = m_dataFolder;
-    QMetaObject::invokeMethod(m_worker, [this, folder, fileMap]() {
-        m_worker->openFiles(folder, fileMap);
+    QMetaObject::invokeMethod(m_worker, [this, folder, fileMap, metaMap]() {
+        m_worker->openFiles(folder, fileMap, metaMap);
     });
 
     qDebug() << "[SaveManager] 采集会话开始, 探头数:" << fileMap.size();

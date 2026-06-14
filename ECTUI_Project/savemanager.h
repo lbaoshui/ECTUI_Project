@@ -25,6 +25,14 @@
 class ProbeManager;
 class Probe;
 
+// 每个探头文件的元数据（写入 CSV 头部注释行）
+struct ProbeFileMeta {
+    float balanceAmp = 0.0f;
+    float balancePhase = 0.0f;
+    bool  balanceSet = false;
+    float rotationAngleDeg = 0.0f;
+};
+
 // ─────────────────────────────────────────────
 //  SaveWorker: 运行在工作线程，仅负责磁盘 I/O
 // ─────────────────────────────────────────────
@@ -37,11 +45,14 @@ public:
 
 public slots:
     /**
-     * @brief 为新的采集会话打开文件（Append 模式）
+     * @brief 为新的采集会话打开文件（Append 模式）并写入元数据头
      * @param folder   数据存储目录
-     * @param probes   {probeIndex: fileName} 映射
+     * @param fileMap  {probeIndex: fileName} 映射
+     * @param metaMap  {probeIndex: ProbeFileMeta} 元数据映射
      */
-    void openFiles(const QString &folder, const QHash<int, QString> &fileMap);
+    void openFiles(const QString &folder,
+                   const QHash<int, QString> &fileMap,
+                   const QHash<int, ProbeFileMeta> &metaMap);
 
     /**
      * @brief 追加数据到指定探头的文件

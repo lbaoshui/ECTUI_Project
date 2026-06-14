@@ -901,6 +901,14 @@ void MainWindow::setupConnections()
     connect(m_acquisitionThread, &DataAcquisitionThread::acquisitionStopped, this, [this]() {
         m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
     });
+
+    // ── 自动清零（平衡点）按钮 ──
+    connect(m_stackAutoZeroBtn, &QPushButton::clicked,
+            this, &MainWindow::onAutoZeroClicked);
+
+    // ── 旋转角度按钮 ──
+    connect(m_stackSetRotationAngleBtn, &QPushButton::clicked,
+            this, &MainWindow::onRotationAngleClicked);
 }
 
 /**
@@ -1467,6 +1475,101 @@ void MainWindow::onMoreParametersClicked()
 {
     ProbeConfigDialog dialog(m_probeManager, m_acquisitionThread, this);
     dialog.exec();
+}
+
+void MainWindow::onAutoZeroClicked()
+{
+    const auto probes = m_probeManager->allProbes();
+    if (probes.isEmpty()) return;
+
+    // 选择探头
+    QStringList probeNames;
+    for (int i = 0; i < probes.size(); ++i) {
+        if (probes[i]) {
+            probeNames << tr("探头 %1").arg(i + 1);
+        }
+    }
+    if (probeNames.isEmpty()) return;
+
+    bool ok = false;
+    const QString sel = QInputDialog::getItem(this, tr("自动清零"),
+        tr("选择要设置平衡点的探头:"), probeNames, 0, false, &ok);
+    if (!ok || sel.isEmpty()) return;
+
+    const int idx = probeNames.indexOf(sel);
+    if (idx < 0 || idx >= probes.size()) return;
+
+    Probe *probe = probes[idx];
+    if (!probe) return;
+
+    // 取 saveData 中数据的均值作为平衡点
+    ProbeData *sd = probe->saveData();
+    if (!sd || sd->isEmpty()) {
+        QMessageBox::information(this, tr("自动清零"),
+            tr("探头 %1 暂无采集数据，请先开始采集。").arg(idx + 1));
+        return;
+    }
+
+    float sumAmp = 0.0f, sumPhase = 0.0f;
+    const int n = qMin(sd->ampSize(), sd->phaseSize());
+    if (n <= 0) return;
+
+    const auto &ampArr = *sd->m_rawData_amp;
+    const auto &phaseArr = *sd->m_rawData_phase;
+    for (int i = 0; i < n; ++i) {
+        sumAmp += ampArr[i];
+        sumPhase += phaseArr[i];
+    }
+    const float meanAmp = sumAmp / n;
+    const float meanPhase = sumPhase / n;
+
+    probe->setBalancePoint(meanAmp, meanPhase);
+
+    m_rotationAngleLabel->setText(tr("Balance: %.1f, %.1f")
+        .arg(static_cast<double>(meanAmp))
+        .arg(static_cast<double>(meanPhase)));
+
+    qDebug() << "[MainWindow] 探头" << (idx + 1)
+             << "平衡点:" << meanAmp << meanPhase;
+}
+
+void MainWindow::onRotationAngleClicked()
+{
+    const auto probes = m_probeManager->allProbes();
+    if (probes.isEmpty()) return;
+
+    // 选择探头
+    QStringList probeNames;
+    for (int i = 0; i < probes.size(); ++i) {
+        if (probes[i]) {
+            probeNames << tr("探头 %1").arg(i + 1);
+        }
+    }
+    if (probeNames.isEmpty()) return;
+
+    bool ok = false;
+    const QString sel = QInputDialog::getItem(this, tr("旋转角度"),
+        tr("选择探头:"), probeNames, 0, false, &ok);
+    if (!ok || sel.isEmpty()) return;
+
+    const int idx = probeNames.indexOf(sel);
+    if (idx < 0 || idx >= probes.size()) return;
+
+    Probe *probe = probes[idx];
+    if (!probe) return;
+
+    const double angle = QInputDialog::getDouble(this, tr("旋转角度"),
+        tr("探头 %1 的旋转角度（度）:").arg(idx + 1),
+        static_cast<double>(probe->rotationAngle()),
+        -360.0, 360.0, 1, &ok);
+    if (!ok) return;
+
+    probe->setRotationAngle(static_cast<float>(angle));
+
+    m_rotationAngleLabel->setText(tr("Rotation Angle: %.1fdg").arg(angle));
+
+    qDebug() << "[MainWindow] 探头" << (idx + 1)
+             << "旋转角:" << angle;
 }
 
 /**

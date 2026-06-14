@@ -391,3 +391,29 @@ void Probe::setFilterHpCutoffHz(float hz)
 {
     m_filterHpCutoffHz = hz;
 }
+
+// ── 8. 平衡点与相位旋转 ─────────────────────
+
+void Probe::setBalancePoint(float amp, float phase)
+{
+    m_balanceAmp = amp;
+    m_balancePhase = phase;
+    m_balanceSet = true;
+}
+
+void Probe::clearBalancePoint()
+{
+    m_balanceAmp = 0.0f;
+    m_balancePhase = 0.0f;
+    m_balanceSet = false;
+}
+
+void Probe::setRotationAngle(float deg)
+{
+    m_rotationAngleDeg.store(deg, std::memory_order_relaxed);
+}
+
+float Probe::rotationAngle() const
+{
+    return m_rotationAngleDeg.load(std::memory_order_relaxed);
+}

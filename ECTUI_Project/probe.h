@@ -11,6 +11,7 @@
 #include <QString>
 #include <QVector>
 #include <algorithm>
+#include <atomic>
 
 /**
  * @brief 探头幅值和相位数据容器（用于封装单组幅值和相位数据）
@@ -155,6 +156,18 @@ public:
   float filterHpCutoffHz() const { return m_filterHpCutoffHz; }
   void setFilterHpCutoffHz(float hz);
 
+  // ── 8. 平衡点与相位旋转 ─────────────────
+  /** @brief 设置平衡点（探头物理零位），采集线程读取，主线程写入 */
+  void setBalancePoint(float amp, float phase);
+  void clearBalancePoint();
+  bool isBalanceSet() const { return m_balanceSet; }
+  float balanceAmp() const { return m_balanceAmp; }
+  float balancePhase() const { return m_balancePhase; }
+
+  /** @brief 设置相位旋转角度（度），采集线程读取，主线程写入 */
+  void setRotationAngle(float deg);
+  float rotationAngle() const;
+
 signals:
   void enabledChanged(bool enabled); ///< 探头启用/禁用状态变化
   void dataUpdated();                ///< 原始数据已更新
@@ -200,6 +213,12 @@ private:
   float m_filterLpCutoffHz = 5000.0f;
   bool m_filterHpEnabled = false;
   float m_filterHpCutoffHz = 100.0f;
+
+  // === 8. 平衡点与相位旋转 ===
+  float m_balanceAmp = 0.0f;
+  float m_balancePhase = 0.0f;
+  bool m_balanceSet = false;
+  std::atomic<float> m_rotationAngleDeg{0.0f};
 };
 
 #endif // PROBE_H

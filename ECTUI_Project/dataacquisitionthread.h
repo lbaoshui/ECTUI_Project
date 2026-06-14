@@ -13,7 +13,7 @@
 #include <QThread>
 #include <QVector>
 #include <QAtomicInt>
-// #include <atomic>
+#include <atomic>
 #include "qcustomplot.h"
 
 class DeviceManager;
@@ -31,6 +31,9 @@ public:
 
     void stop();
     bool isAcquiring() const;
+
+    /** @brief 设置相位旋转角度（度），主线程可随时调用 */
+    void setRotationAngle(float angleDeg);
 
     /**
      * @brief 注册某个探头对应的曲线数据指针
@@ -63,6 +66,7 @@ private:
     ProbeManager *m_probeManager;
     // std::atomic<unsigned int> m_running;
     QAtomicInt m_running;
+    std::atomic<float> m_rotationAngleDeg{0.0f};  // 相位旋转角度，主线程写，采集线程读
 
     struct CurveRef {
         QVector<QCPCurveData> *impedanceCurve = nullptr;

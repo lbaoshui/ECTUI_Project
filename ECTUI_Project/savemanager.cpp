@@ -237,7 +237,7 @@ void SaveManager::onSaveDataReady(int probeIndex)
         return;
     }
 
-    // 从 saveData 拷贝数据，发送到工作线程写入
+    // 从 saveData 拷贝数据，发送到工作线程写入（主要是为了保证数据的线程安全）
     QVector<float> amp;
     QVector<float> phase;
     if (saveData->m_rawData_amp) {

@@ -6,6 +6,11 @@
 #include "devicemanager.h"
 #include "probe.h"
 #include "probemanager.h"
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 DataAcquisitionThread::DataAcquisitionThread(DeviceManager *deviceManager,
                                              ProbeManager *probeManager,
@@ -32,6 +37,11 @@ bool DataAcquisitionThread::isAcquiring() const
 {
     // return m_running.load(std::memory_order_relaxed) != 0;
     return m_running.loadRelaxed() != 0;
+}
+
+void DataAcquisitionThread::setRotationAngle(float angleDeg)
+{
+    m_rotationAngleDeg.store(angleDeg, std::memory_order_relaxed);
 }
 
 void DataAcquisitionThread::registerCurveData(int probeIndex,
@@ -66,6 +76,16 @@ void DataAcquisitionThread::run()
     m_sampleCounter = 0;
 
     while (m_running.loadRelaxed()) {
+        // 每轮循环读一次旋转角，预计算三角函数
+        const float angleDeg = m_rotationAngleDeg.load(std::memory_order_relaxed);
+        const bool needRotate = std::fabs(angleDeg) > 1e-6f;
+        float cosA = 1.0f, sinA = 0.0f;
+        if (needRotate) {
+            const float rad = angleDeg * static_cast<float>(M_PI) / 180.0f;
+            cosA = std::cos(rad);
+            sinA = std::sin(rad);
+        }
+
         bool gotData = false;
         const auto probes = m_probeManager->allProbes();
 
@@ -101,28 +121,38 @@ void DataAcquisitionThread::run()
                 if (nPoints <= 0)
                     continue;
 
-                // 1. 写入 Probe 的活跃乒乓缓冲区
+                // 1. 写入 Probe 的活跃乒乓缓冲区 
                 if (active) {
-                    active->append(packet.ampMv, packet.phaseDeg);
+                    active->append(packet.ampMv, packet.phaseDeg);  // 存储的数据为原始数据
                 }
 
-                // 2. 同步写入曲线数据容器
+                // 2. 同步写入曲线数据容器（应用相位旋转）
                 for (int j = 0; j < nPoints; ++j) {
                     const double key = static_cast<double>(m_sampleCounter++);
 
+                    // 将数据进行相位旋转
+                    float ampVal   = packet.ampMv[j];
+                    float phaseVal = packet.phaseDeg[j];
+                    if (needRotate) {
+                        const float x = ampVal;
+                        const float y = phaseVal;
+                        ampVal   = x * cosA - y * sinA;
+                        phaseVal = x * sinA + y * cosA;
+                    }
+
                     if (ampCurve) {
                         ampCurve->append(QCPGraphData(
-                            key, static_cast<double>(packet.ampMv[j])));
+                            key, static_cast<double>(ampVal)));
                     }
                     if (phaseCurve) {
                         phaseCurve->append(QCPGraphData(
-                            key, static_cast<double>(packet.phaseDeg[j])));
+                            key, static_cast<double>(phaseVal)));
                     }
                     if (impCurve) {
                         impCurve->append(QCPCurveData(
                             key, // t: 排序键
-                            static_cast<double>(packet.ampMv[j]), // key: 实部
-                            static_cast<double>(packet.phaseDeg[j]) // value: 虚部
+                            static_cast<double>(ampVal),   // key: 实部
+                            static_cast<double>(phaseVal)  // value: 虚部
                         ));
                     }
                 }

@@ -5,6 +5,7 @@
 
 #include <QCloseEvent>
 #include <QDialog>
+#include <QFileDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
@@ -839,17 +840,32 @@ void MainWindow::setupConnections()
                                          .arg(message));
             });
 
+    // ── 加载/保存探头配置文件 ──────────────────
+    connect(m_stackLoadConfigBtn, &QPushButton::clicked, this, [this]() {
+        const QString filePath = QFileDialog::getOpenFileName(
+            this, tr("加载探头配置"), QString(), tr("JSON 文件 (*.json)"));
+        if (filePath.isEmpty()) return;
+        if (ProbeConfigDialog::loadProbeConfigFromFile(m_probeManager, filePath)) {
+            qDebug() << "[MainWindow] 探头配置已从文件加载:" << filePath;
+        }
+    });
+    connect(m_stackSaveDefaultConfigBtn, &QPushButton::clicked, this, [this]() {
+        const QString filePath = QFileDialog::getSaveFileName(
+            this, tr("保存探头配置"), QString(), tr("JSON 文件 (*.json)"));
+        if (filePath.isEmpty()) return;
+        if (ProbeConfigDialog::saveProbeConfigToFile(m_probeManager, filePath)) {
+            qDebug() << "[MainWindow] 探头配置已保存到文件:" << filePath;
+        }
+    });
+
     // ── SaveManager 相关连接 ─────────────────────
 
     // 保存按钮：手动设置数据目录
-    connect(m_saveDataBtn, &QPushButton::clicked, this, [this]() {
-        // 使用当前 exe 目录下的 data 文件夹
+    connect(m_stackSaveDataBtn, &QPushButton::clicked, this, [this]() {
         QString folder = QDir::currentPath() + "/data";
         m_saveManager->setDataFolder(folder);
         qDebug() << "[MainWindow] 数据保存目录:" << folder;
     });
-
-    connect(m_stackSaveDataBtn, &QPushButton::clicked, m_saveDataBtn, &QPushButton::clicked);
 
     // 新文件创建提示
     connect(m_saveManager, &SaveManager::newFileCreated, this,

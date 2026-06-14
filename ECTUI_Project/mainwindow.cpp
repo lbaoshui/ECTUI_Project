@@ -3,9 +3,11 @@
 #include "devicemanager.h"
 #include "probeconfigdialog.h"
 
+#include <QCloseEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileInfo>
 #include <QLineEdit>
 
 #include <cmath>
@@ -30,6 +32,15 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
     m_probeManager->setProbeCount(8);  // 默认 8 个探头通道
+
+    // 尝试加载默认配置文件
+    {
+        const QString defaultPath = ProbeConfigDialog::defaultConfigFilePath();
+        if (QFileInfo::exists(defaultPath)) {
+            ProbeConfigDialog::loadProbeConfigFromFile(m_probeManager, defaultPath);
+        }
+    }
+
     setupUI();
 }
 
@@ -39,6 +50,14 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // 关闭前自动保存当前探头配置为默认配置文件
+    const QString configPath = ProbeConfigDialog::defaultConfigFilePath();
+    ProbeConfigDialog::saveProbeConfigToFile(m_probeManager, configPath);
+    QMainWindow::closeEvent(event);
 }
 
 /**

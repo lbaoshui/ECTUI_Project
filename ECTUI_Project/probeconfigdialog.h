@@ -33,6 +33,15 @@ public:
                                DataAcquisitionThread *acqThread = nullptr,
                                QWidget *parent = nullptr);
 
+    /** @brief 默认配置文件路径 */
+    static QString defaultConfigFilePath();
+
+    /** @brief 将 ProbeManager 中的探头配置保存到 JSON 文件 */
+    static bool saveProbeConfigToFile(ProbeManager *pm, const QString &filePath);
+
+    /** @brief 从 JSON 文件加载探头配置到 ProbeManager */
+    static bool loadProbeConfigFromFile(ProbeManager *pm, const QString &filePath);
+
 private slots:
     /**
      * @brief 探头数量变更时重建参数组 UI
@@ -40,8 +49,13 @@ private slots:
      */
     void onProbeCountChanged(int count);
 
-    /** @brief 应用配置到 ProbeManager 并关闭对话框 */
+    /** @brief 应用配置到 ProbeManager 并同步快照，不关闭对话框 */
     void onApplyClicked();
+
+    /** @brief 保存当前 UI 参数到 JSON 配置文件 */
+    void onSaveConfigClicked();
+    /** @brief 从 JSON 配置文件加载参数到 UI */
+    void onLoadConfigClicked();
 
 private:
     /**

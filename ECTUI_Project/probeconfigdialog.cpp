@@ -8,6 +8,13 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QFrame>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QMessageBox>
 
 /**
  * @brief 构造探头参数配置对话框
@@ -125,13 +132,19 @@ void ProbeConfigDialog::setupUI()
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->setSpacing(12);
     buttonLayout->addStretch();
+    QPushButton *loadCfgBtn = new QPushButton(tr("Load Config"), this);
+    QPushButton *saveCfgBtn = new QPushButton(tr("Save Config"), this);
     QPushButton *applyBtn = new QPushButton(tr("Apply"), this);
     QPushButton *cancelBtn = new QPushButton(tr("Cancel"), this);
-    cancelBtn->setStyleSheet(
+    const QString secondaryBtnStyle =
         "QPushButton { background-color: #3c3c3c; color: #cccccc; border: 1px solid #555;"
         "    border-radius: 3px; padding: 8px 20px; font-size: 13px; font-weight: bold; min-width: 90px; }"
-        "QPushButton:hover { background-color: #555; }"
-    );
+        "QPushButton:hover { background-color: #555; }";
+    loadCfgBtn->setStyleSheet(secondaryBtnStyle);
+    saveCfgBtn->setStyleSheet(secondaryBtnStyle);
+    cancelBtn->setStyleSheet(secondaryBtnStyle);
+    buttonLayout->addWidget(loadCfgBtn);
+    buttonLayout->addWidget(saveCfgBtn);
     buttonLayout->addWidget(applyBtn);
     buttonLayout->addWidget(cancelBtn);
     mainLayout->addLayout(buttonLayout);
@@ -140,6 +153,8 @@ void ProbeConfigDialog::setupUI()
     connect(m_probeCountSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &ProbeConfigDialog::onProbeCountChanged);
     connect(applyBtn, &QPushButton::clicked, this, &ProbeConfigDialog::onApplyClicked);
+    connect(saveCfgBtn, &QPushButton::clicked, this, &ProbeConfigDialog::onSaveConfigClicked);
+    connect(loadCfgBtn, &QPushButton::clicked, this, &ProbeConfigDialog::onLoadConfigClicked);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 }
 
@@ -461,4 +476,192 @@ void ProbeConfigDialog::onApplyClicked()
         s.hpEnabled = w.filterHpCheckBox->isChecked();
         s.hpCutoff  = w.filterHpCutoffSpinBox->value();
     }
+}
+
+void ProbeConfigDialog::onSaveConfigClicked()
+{
+    const QString filePath = QFileDialog::getSaveFileName(
+        this, tr("保存探头配置"), QString(), tr("JSON 文件 (*.json)"));
+    if (filePath.isEmpty()) return;
+
+    const int count = m_probeCountSpinBox->value();
+
+    QJsonObject root;
+    root[QStringLiteral("probeCount")] = count;
+
+    QJsonArray probesArray;
+    for (int i = 0; i < count && i < m_probeGroupWidgets.size(); ++i) {
+        const auto &w = m_probeGroupWidgets[i];
+        QJsonObject probeObj;
+        probeObj[QStringLiteral("hwChannel")] = w.hwChannelSpinBox->value();
+        probeObj[QStringLiteral("excFreq")]   = w.excFreqSpinBox->value();
+        probeObj[QStringLiteral("excPhase")]  = w.excPhaseSpinBox->value();
+        probeObj[QStringLiteral("excAmp")]    = w.excAmpSpinBox->value();
+        probeObj[QStringLiteral("enabled")]   = w.enabledCheckBox->isChecked();
+        probeObj[QStringLiteral("lpEnabled")] = w.filterLpCheckBox->isChecked();
+        probeObj[QStringLiteral("lpCutoff")]  = w.filterLpCutoffSpinBox->value();
+        probeObj[QStringLiteral("hpEnabled")] = w.filterHpCheckBox->isChecked();
+        probeObj[QStringLiteral("hpCutoff")]  = w.filterHpCutoffSpinBox->value();
+        probesArray.append(probeObj);
+    }
+    root[QStringLiteral("probes")] = probesArray;
+
+    QJsonDocument doc(root);
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::warning(this, tr("保存失败"),
+                             tr("无法写入文件:\n%1").arg(file.errorString()));
+        return;
+    }
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+}
+
+void ProbeConfigDialog::onLoadConfigClicked()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this, tr("加载探头配置"), QString(), tr("JSON 文件 (*.json)"));
+    if (filePath.isEmpty()) return;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("加载失败"),
+                             tr("无法打开文件:\n%1").arg(file.errorString()));
+        return;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+
+    if (parseError.error != QJsonParseError::NoError) {
+        QMessageBox::warning(this, tr("加载失败"),
+                             tr("JSON 解析错误:\n%1").arg(parseError.errorString()));
+        return;
+    }
+
+    const QJsonObject root = doc.object();
+    const int count = qBound(1, root.value(QStringLiteral("probeCount")).toInt(1), 16);
+    const QJsonArray probesArray = root.value(QStringLiteral("probes")).toArray();
+
+    // 更新探头数量 → 触发重建 UI
+    m_probeCountSpinBox->setValue(count);
+
+    // 回填各通道参数
+    for (int i = 0; i < count && i < probesArray.size() && i < m_probeGroupWidgets.size(); ++i) {
+        const QJsonObject probeObj = probesArray[i].toObject();
+        const auto &w = m_probeGroupWidgets[i];
+        w.hwChannelSpinBox->setValue(probeObj.value(QStringLiteral("hwChannel")).toInt(i + 1));
+        w.excFreqSpinBox->setValue(probeObj.value(QStringLiteral("excFreq")).toInt(10000));
+        w.excPhaseSpinBox->setValue(probeObj.value(QStringLiteral("excPhase")).toInt(0));
+        w.excAmpSpinBox->setValue(probeObj.value(QStringLiteral("excAmp")).toInt(60));
+        w.enabledCheckBox->setChecked(probeObj.value(QStringLiteral("enabled")).toBool(true));
+        w.filterLpCheckBox->setChecked(probeObj.value(QStringLiteral("lpEnabled")).toBool(false));
+        w.filterLpCutoffSpinBox->setValue(probeObj.value(QStringLiteral("lpCutoff")).toInt(5000));
+        w.filterHpCheckBox->setChecked(probeObj.value(QStringLiteral("hpEnabled")).toBool(false));
+        w.filterHpCutoffSpinBox->setValue(probeObj.value(QStringLiteral("hpCutoff")).toInt(100));
+    }
+
+    // 同步到快照（后续通道数量变更时可正确恢复）
+    if (count > m_savedStates.size()) {
+        m_savedStates.resize(count);
+    }
+    for (int i = 0; i < count && i < m_probeGroupWidgets.size(); ++i) {
+        const auto &w = m_probeGroupWidgets[i];
+        auto &s = m_savedStates[i];
+        s.hwChannel = w.hwChannelSpinBox->value();
+        s.excFreq   = w.excFreqSpinBox->value();
+        s.excPhase  = w.excPhaseSpinBox->value();
+        s.excAmp    = w.excAmpSpinBox->value();
+        s.enabled   = w.enabledCheckBox->isChecked();
+        s.lpEnabled = w.filterLpCheckBox->isChecked();
+        s.lpCutoff  = w.filterLpCutoffSpinBox->value();
+        s.hpEnabled = w.filterHpCheckBox->isChecked();
+        s.hpCutoff  = w.filterHpCutoffSpinBox->value();
+    }
+}
+
+QString ProbeConfigDialog::defaultConfigFilePath()
+{
+    return QDir::currentPath() + QStringLiteral("/config/default_probe.json");
+}
+
+bool ProbeConfigDialog::saveProbeConfigToFile(ProbeManager *pm, const QString &filePath)
+{
+    if (!pm) return false;
+
+    const int count = pm->probeCount();
+
+    QJsonObject root;
+    root[QStringLiteral("probeCount")] = count;
+
+    QJsonArray probesArray;
+    for (int i = 0; i < count; ++i) {
+        const Probe *probe = pm->probeAt(i);
+        if (!probe) continue;
+        QJsonObject probeObj;
+        probeObj[QStringLiteral("hwChannel")] = probe->hardwareChannel();
+        probeObj[QStringLiteral("excFreq")]   = probe->excitationFreq();
+        probeObj[QStringLiteral("excPhase")]  = probe->excitationPhase();
+        probeObj[QStringLiteral("excAmp")]    = probe->excitationAmp();
+        probeObj[QStringLiteral("enabled")]   = probe->isEnabled();
+        probeObj[QStringLiteral("lpEnabled")] = probe->filterLpEnabled();
+        probeObj[QStringLiteral("lpCutoff")]  = static_cast<int>(probe->filterLpCutoffHz());
+        probeObj[QStringLiteral("hpEnabled")] = probe->filterHpEnabled();
+        probeObj[QStringLiteral("hpCutoff")]  = static_cast<int>(probe->filterHpCutoffHz());
+        probesArray.append(probeObj);
+    }
+    root[QStringLiteral("probes")] = probesArray;
+
+    const QString dirPath = QFileInfo(filePath).absolutePath();
+    if (!QDir().mkpath(dirPath)) {
+        return false;
+    }
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    file.close();
+    return true;
+}
+
+bool ProbeConfigDialog::loadProbeConfigFromFile(ProbeManager *pm, const QString &filePath)
+{
+    if (!pm) return false;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+
+    if (parseError.error != QJsonParseError::NoError) {
+        return false;
+    }
+
+    const QJsonObject root = doc.object();
+    const int count = qBound(1, root.value(QStringLiteral("probeCount")).toInt(1), 16);
+    const QJsonArray probesArray = root.value(QStringLiteral("probes")).toArray();
+
+    pm->setProbeCount(count);
+    for (int i = 0; i < count && i < probesArray.size(); ++i) {
+        Probe *probe = pm->probeAt(i);
+        if (!probe) continue;
+        const QJsonObject probeObj = probesArray[i].toObject();
+        probe->setHardwareChannel(probeObj.value(QStringLiteral("hwChannel")).toInt(i + 1));
+        probe->setExcitation(probeObj.value(QStringLiteral("excFreq")).toInt(10000),
+                             probeObj.value(QStringLiteral("excPhase")).toInt(0),
+                             probeObj.value(QStringLiteral("excAmp")).toInt(60));
+        probe->setEnabled(probeObj.value(QStringLiteral("enabled")).toBool(true));
+        probe->setFilterLpEnabled(probeObj.value(QStringLiteral("lpEnabled")).toBool(false));
+        probe->setFilterLpCutoffHz(static_cast<float>(probeObj.value(QStringLiteral("lpCutoff")).toInt(5000)));
+        probe->setFilterHpEnabled(probeObj.value(QStringLiteral("hpEnabled")).toBool(false));
+        probe->setFilterHpCutoffHz(static_cast<float>(probeObj.value(QStringLiteral("hpCutoff")).toInt(100)));
+    }
+    return true;
 }

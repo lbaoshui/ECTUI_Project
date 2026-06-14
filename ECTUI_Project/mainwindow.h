@@ -265,6 +265,7 @@ private:
 
     void updateplot2_Double_axis_line();
 
+    void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event);
 
     // 绘图曲线的各种变量    

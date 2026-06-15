@@ -52,6 +52,11 @@ MainWindow::MainWindow(QWidget *parent)
  */
 MainWindow::~MainWindow()
 {
+    for (auto &c : m_probeCurves) {
+        delete c.impedance;
+        delete c.amplitude;
+        delete c.phase;
+    }
     delete ui;
 }
 
@@ -915,6 +920,39 @@ void MainWindow::setupConnections()
     // ── 旋转角度按钮 ──
     connect(m_stackSetRotationAngleBtn, &QPushButton::clicked,
             this, &MainWindow::onRotationAngleClicked);
+
+    // ── 注册每探头独立的曲线数据容器到采集线程 ──
+    {
+        const auto probes = m_probeManager->allProbes();
+        for (int i = 0; i < probes.size() && i < m_probeCurves.size(); ++i) {
+            if (probes[i]) {
+                m_acquisitionThread->registerCurveData(
+                    i,
+                    m_probeCurves[i].impedance,
+                    m_probeCurves[i].amplitude,
+                    m_probeCurves[i].phase);
+            }
+        }
+    }
+
+    // ── 采集数据就绪 → 刷新当前选中探头的绘图曲线 ──
+    connect(m_acquisitionThread, &DataAcquisitionThread::dataReady, this, [this](int probeIndex) {
+        if (probeIndex != m_displayProbeIndex)
+            return;
+        if (probeIndex < 0 || probeIndex >= m_probeCurves.size())
+            return;
+
+        const auto &c = m_probeCurves[probeIndex];
+        if (m_impedance_curve && c.impedance && !c.impedance->isEmpty())
+            m_impedance_curve->data()->set(*c.impedance);
+        if (m_amplitude_curve && c.amplitude && !c.amplitude->isEmpty())
+            m_amplitude_curve->data()->set(*c.amplitude);
+        if (m_phase_curve && c.phase && !c.phase->isEmpty())
+            m_phase_curve->data()->set(*c.phase);
+
+        m_plot1->replot(QCustomPlot::rpQueuedReplot);
+        m_plot2->replot(QCustomPlot::rpQueuedReplot);
+    });
 }
 
 /**
@@ -935,6 +973,12 @@ void MainWindow::initializePlots()
     m_plot1->addGraph();
     m_plot1->graph(0)->setScatterStyle(QCPScatterStyle::ssCircle);
     m_plot1->graph(0)->setPen(QPen(Qt::green));
+
+    // 阻抗曲线（QCPCurve：由采集线程实时写入）
+    m_impedance_curve = new QCPCurve(m_plot1->xAxis, m_plot1->yAxis);
+    m_impedance_curve->setPen(QPen(Qt::green, 1));
+    m_impedance_curve->setLineStyle(QCPCurve::lsNone);
+    m_impedance_curve->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCircle, 2));
 
     // 添加圆形曲线
     m_circleCurve = new QCPCurve(m_plot1->xAxis, m_plot1->yAxis);
@@ -1004,8 +1048,11 @@ void MainWindow::initializePlots()
     m_plot2->yAxis->setRange(-500, 500);
     // m_plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot2->axisRect()->setupFullAxesBox(true);
-    m_plot2->addGraph();
-    m_plot2->graph(0)->setPen(QPen(Qt::red));
+    m_amplitude_curve = m_plot2->addGraph();
+    m_amplitude_curve->setPen(QPen(Qt::red));
+
+    m_phase_curve = m_plot2->addGraph();
+    m_phase_curve->setPen(QPen(Qt::green));
 
     // 隐藏网格，只保留零线
     m_plot2->xAxis->grid()->setVisible(true);
@@ -1137,6 +1184,17 @@ void MainWindow::initializePlots()
     m_plot3->xAxis->setSubTickLengthOut(0);
     m_plot3->yAxis->setSubTickLengthIn(0);
     m_plot3->yAxis->setSubTickLengthOut(0);
+
+    // ── 为每个探头创建独立的曲线数据容器 ──
+    {
+        const int nProbes = m_probeManager->probeCount();
+        m_probeCurves.resize(nProbes);
+        for (int i = 0; i < nProbes; ++i) {
+            m_probeCurves[i].impedance = new QVector<QCPCurveData>();
+            m_probeCurves[i].amplitude = new QVector<QCPGraphData>();
+            m_probeCurves[i].phase     = new QVector<QCPGraphData>();
+        }
+    }
 
     m_plot1->replot();
     m_plot2->replot();
@@ -1975,12 +2033,10 @@ void MainWindow::onLoadDataClicked()
     m_plot1->replot();
 
     // plot2：A 扫时序图（红色=幅值，绿色=相位）
-    m_plot2->graph(0)->setData(plot2_keys, plot2_amp, true);
-    if (m_plot2->graphCount() < 2) {
-        m_plot2->addGraph();
-        m_plot2->graph(1)->setPen(QPen(Qt::green));
-    }
-    m_plot2->graph(1)->setData(plot2_keys, plot2_phase, true);
+    if (m_amplitude_curve)
+        m_amplitude_curve->setData(plot2_keys, plot2_amp, true);
+    if (m_phase_curve)
+        m_phase_curve->setData(plot2_keys, plot2_phase, true);
     m_plot2->rescaleAxes();
     m_plot2->replot();
 

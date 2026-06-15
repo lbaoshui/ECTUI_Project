@@ -145,17 +145,20 @@ private:
     QFrame *m_plotArea_frame;
     QFrame *m_plotArea_frame1;
 
-    // 绘图区1（左上）
+    // 绘图区1（左上），阻抗图曲线
     QFrame *m_plotArea1;
     QVBoxLayout *m_plotArea1Layout;
     // QCustomPlot *m_plot1;
-    customplot *m_plot1;
-    QCPCurve *m_circleCurve; // 圆形曲线，用于提供环形参考线
+    customplot *m_plot1 = nullptr;
+    QCPCurve *m_circleCurve = nullptr; // 圆形曲线，用于提供环形参考线
+    QCPCurve *m_impedance_curve = nullptr; // 阻抗曲线
 
-    // 绘图区2（右上）+ 模式信息
+    // 绘图区2（右上）+ 模式信息，幅值和相位曲线（A扫图）
     QFrame *m_plotArea2Frame;
     QVBoxLayout *m_plotArea2Layout;
-    QCustomPlot *m_plot2;
+    QCustomPlot *m_plot2 = nullptr;
+    QCPGraph *m_amplitude_curve = nullptr; // 幅值曲线
+    QCPGraph *m_phase_curve = nullptr; // 相位曲线
     QFrame *m_modeInfoFrame;
     QVBoxLayout *m_modeInfoLayout;
     QLabel *m_modeInfoLabel;
@@ -163,6 +166,15 @@ private:
     QFrame *m_modeInfoFrame2;
     QVBoxLayout *m_modeInfoLayout2;
     QLabel *m_modeInfoLabel2;
+
+    // 每探头独立的曲线数据容器
+    struct ProbeCurveContainers {
+        QVector<QCPCurveData> *impedance = nullptr;
+        QVector<QCPGraphData> *amplitude = nullptr;
+        QVector<QCPGraphData> *phase     = nullptr;
+    };
+    QVector<ProbeCurveContainers> m_probeCurves;
+    int m_displayProbeIndex = 0;
 
     // 绘图区3（左下）
     QFrame *m_plotArea3;
@@ -274,12 +286,6 @@ private:
 
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event);
-
-    // 绘图曲线的各种变量    
-    QCPCurve* impedance_curve = nullptr;   // 阻抗曲线
-    QCPGraph* amplitude_curve = nullptr;   // 幅值曲线
-    QCPGraph* phase_curve     = nullptr;   // 相位曲线
-    
 
 signals:
     void plotsize_changed();

@@ -87,7 +87,7 @@ private:
 
     quint64 m_sampleCounter = 0;
 
-    static constexpr int SAVE_THRESHOLD   = 100000; // active 缓冲区达到此点数时触发 swap 和保存
+    static constexpr int SAVE_THRESHOLD   = 300000; // active 缓冲区达到此点数时触发 swap 和保存
     static constexpr int CURVE_CAPACITY   = 310000; // 预分配容量，大于清除阈值确保 append 不触发扩容
     static constexpr int CURVE_CLEAR_SIZE = 300000; // 超过此大小时 clear
     static constexpr int MAX_BATCH_SIZE   = 50;

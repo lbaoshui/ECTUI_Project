@@ -122,7 +122,7 @@ public:
   // ── 3.1 乒乓缓冲区 ─────────────────────
   /** @brief 活跃缓冲区，仅供采集线程写入 */
   ProbeData *activeData() { return m_activeData; }
-  /** @brief 保存缓冲区，主线程在收到 dataReady 信号后安全读取 */
+  /** @brief 保存缓冲区，供主线程在定时器刷新或手动加载时安全读取 */
   ProbeData *saveData() { return m_saveData; }
   /** @brief 交换活跃/保存缓冲区指针（采集线程在写完一批数据后调用） */
   void swapBuffers();

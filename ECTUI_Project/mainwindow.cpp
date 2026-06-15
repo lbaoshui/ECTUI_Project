@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QLineEdit>
+#include <QTimer>
 
 #include <cmath>
 
@@ -921,38 +922,16 @@ void MainWindow::setupConnections()
     connect(m_stackSetRotationAngleBtn, &QPushButton::clicked,
             this, &MainWindow::onRotationAngleClicked);
 
-    // ── 注册每探头独立的曲线数据容器到采集线程 ──
-    {
-        const auto probes = m_probeManager->allProbes();
-        for (int i = 0; i < probes.size() && i < m_probeCurves.size(); ++i) {
-            if (probes[i]) {
-                m_acquisitionThread->registerCurveData(
-                    i,
-                    m_probeCurves[i].impedance,
-                    m_probeCurves[i].amplitude,
-                    m_probeCurves[i].phase);
-            }
-        }
-    }
+    // ── 同步探头曲线容器到采集线程（初始 + 探头数变化时重注册） ──
+    syncProbeCurves();
+    connect(m_probeManager, &ProbeManager::probeCountChanged,
+            this, &MainWindow::syncProbeCurves);
 
-    // ── 采集数据就绪 → 刷新当前选中探头的绘图曲线 ──
-    connect(m_acquisitionThread, &DataAcquisitionThread::dataReady, this, [this](int probeIndex) {
-        if (probeIndex != m_displayProbeIndex)
-            return;
-        if (probeIndex < 0 || probeIndex >= m_probeCurves.size())
-            return;
-
-        const auto &c = m_probeCurves[probeIndex];
-        if (m_impedance_curve && c.impedance && !c.impedance->isEmpty())
-            m_impedance_curve->data()->set(*c.impedance);
-        if (m_amplitude_curve && c.amplitude && !c.amplitude->isEmpty())
-            m_amplitude_curve->data()->set(*c.amplitude);
-        if (m_phase_curve && c.phase && !c.phase->isEmpty())
-            m_phase_curve->data()->set(*c.phase);
-
-        m_plot1->replot(QCustomPlot::rpQueuedReplot);
-        m_plot2->replot(QCustomPlot::rpQueuedReplot);
-    });
+    // ── 定时器刷新绘图曲线（~25 fps） ──
+    m_plotRefreshTimer = new QTimer(this);
+    m_plotRefreshTimer->setInterval(20);
+    connect(m_plotRefreshTimer, &QTimer::timeout, this, &MainWindow::refreshPlots);
+    m_plotRefreshTimer->start();
 }
 
 /**
@@ -1184,17 +1163,6 @@ void MainWindow::initializePlots()
     m_plot3->xAxis->setSubTickLengthOut(0);
     m_plot3->yAxis->setSubTickLengthIn(0);
     m_plot3->yAxis->setSubTickLengthOut(0);
-
-    // ── 为每个探头创建独立的曲线数据容器 ──
-    {
-        const int nProbes = m_probeManager->probeCount();
-        m_probeCurves.resize(nProbes);
-        for (int i = 0; i < nProbes; ++i) {
-            m_probeCurves[i].impedance = new QVector<QCPCurveData>();
-            m_probeCurves[i].amplitude = new QVector<QCPGraphData>();
-            m_probeCurves[i].phase     = new QVector<QCPGraphData>();
-        }
-    }
 
     m_plot1->replot();
     m_plot2->replot();
@@ -2045,4 +2013,63 @@ void MainWindow::onLoadDataClicked()
              << "探头:" << (probeIdx + 1)
              << "平衡点:" << balAmp << balPhase
              << "旋转:" << fileRotation;
+}
+
+// 由 QTimer 周期性调用，将当前选中探头的数据容器刷入绘图曲线
+void MainWindow::refreshPlots()
+{
+    if (m_displayProbeIndex < 0 || m_displayProbeIndex >= m_probeCurves.size())
+        return;
+
+    const auto &c = m_probeCurves[m_displayProbeIndex];
+    if (m_impedance_curve && c.impedance && !c.impedance->isEmpty())
+        m_impedance_curve->data()->set(*c.impedance,true);
+    if (m_amplitude_curve && c.amplitude && !c.amplitude->isEmpty())
+        m_amplitude_curve->data()->set(*c.amplitude, true);
+    if (m_phase_curve && c.phase && !c.phase->isEmpty())
+        m_phase_curve->data()->set(*c.phase, true);
+
+    m_plot1->replot(QCustomPlot::rpQueuedReplot);
+    m_plot2->replot(QCustomPlot::rpQueuedReplot);
+}
+
+void MainWindow::syncProbeCurves()
+{
+    const int newCount = m_probeManager->probeCount();
+    const int oldCount = m_probeCurves.size();
+
+    // 收缩时释放多余容器
+    for (int i = newCount; i < oldCount; ++i) {
+        delete m_probeCurves[i].impedance;
+        delete m_probeCurves[i].amplitude;
+        delete m_probeCurves[i].phase;
+    }
+
+    m_probeCurves.resize(newCount);
+
+    // 扩张时为新增探头创建容器并预分配容量
+    for (int i = oldCount; i < newCount; ++i) {
+        m_probeCurves[i].impedance = new QVector<QCPCurveData>();
+        m_probeCurves[i].amplitude = new QVector<QCPGraphData>();
+        m_probeCurves[i].phase     = new QVector<QCPGraphData>();
+        m_probeCurves[i].impedance->reserve(DataAcquisitionThread::CURVE_CAPACITY);
+        m_probeCurves[i].amplitude->reserve(DataAcquisitionThread::CURVE_CAPACITY);
+        m_probeCurves[i].phase->reserve(DataAcquisitionThread::CURVE_CAPACITY);
+    }
+
+    // 全量重注册，确保采集线程的 m_curveRefs 与最新探头列表对齐
+    const auto probes = m_probeManager->allProbes();
+    for (int i = 0; i < probes.size() && i < m_probeCurves.size(); ++i) {
+        if (probes[i]) {
+            m_acquisitionThread->registerCurveData(
+                i,
+                m_probeCurves[i].impedance,
+                m_probeCurves[i].amplitude,
+                m_probeCurves[i].phase);
+        }
+    }
+
+    // 若当前显示索引越界，回退到 0
+    if (m_displayProbeIndex >= newCount)
+        m_displayProbeIndex = 0;
 }

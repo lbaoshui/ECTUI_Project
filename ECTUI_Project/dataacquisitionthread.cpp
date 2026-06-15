@@ -191,9 +191,6 @@ void DataAcquisitionThread::run()
             if (active && active->ampSize() >= SAVE_THRESHOLD) {
                 probe->swapBuffers();
                 emit saveDataReady(i);
-            }
-
-            emit dataReady(i);
         }
 
         // ── for 循环结束后：检查曲线数据容器是否超过阈值 ──

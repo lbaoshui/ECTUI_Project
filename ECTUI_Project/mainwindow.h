@@ -72,6 +72,12 @@ private slots:
     // 数据加载
     void onLoadDataClicked();
 
+    // 定时刷新绘图曲线
+    void refreshPlots();
+
+    // 同步探头曲线容器与采集线程注册（探头数变化时调用）
+    void syncProbeCurves();
+
 private:
     Ui::MainWindow *ui;
 
@@ -206,6 +212,7 @@ private:
     ProbeManager *m_probeManager;
     SaveManager *m_saveManager = nullptr;
     DataAcquisitionThread *m_acquisitionThread = nullptr;
+    QTimer *m_plotRefreshTimer = nullptr;
     QString m_deviceHost;
     quint16 m_devicePort = 8899;
     bool m_deviceConnectionPending = false;

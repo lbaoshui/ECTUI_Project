@@ -1053,14 +1053,14 @@ void MainWindow::initializePlots()
 
     // ---------------------------------------------------------------------------------------------------------------------------------------
     // 初始化绘图区2 - A扫时序图
-    m_plot2->xAxis->setRange(0, 1000);
+    m_plot2->xAxis->setRange(0, 150000);
     m_plot2->yAxis->setRange(-500, 500);
     // m_plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot2->axisRect()->setupFullAxesBox(true);
-    m_amplitude_curve = m_plot2->addGraph();
-    m_amplitude_curve->setPen(QPen(Qt::red));
+    m_amplitude_curve = new QCPGraph(m_plot2->xAxis, m_plot2->yAxis);
+    m_amplitude_curve->setPen(QPen(Qt::green));
 
-    m_phase_curve = m_plot2->addGraph();
+    m_phase_curve = new QCPGraph(m_plot2->xAxis, m_plot2->yAxis);
     m_phase_curve->setPen(QPen(Qt::green));
 
     // 隐藏网格，只保留零线

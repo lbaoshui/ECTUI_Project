@@ -69,6 +69,9 @@ private slots:
     void onAutoZeroClicked();
     void onRotationAngleClicked();
 
+    // 数据加载
+    void onLoadDataClicked();
+
 private:
     Ui::MainWindow *ui;
 

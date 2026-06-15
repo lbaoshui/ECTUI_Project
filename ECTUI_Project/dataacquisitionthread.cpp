@@ -39,11 +39,24 @@ bool DataAcquisitionThread::isAcquiring() const
     return m_running.loadRelaxed() != 0;
 }
 
+/**
+ * @brief 注册某探头的曲线数据容器指针（采集前由主线程一次性调用）
+ *
+ * 采集线程 run() 拿到指针后直接 append，零拷贝、无锁。
+ * 容器预分配至 CURVE_CAPACITY，保证运行期间永不触发 QVector reallocate，
+ * 从而指针地址始终有效，主线程可安全读取。
+ *
+ * @param probeIndex      探头逻辑索引 (0-based)
+ * @param impedanceCurve  阻抗平面图数据容器（t, real, imag），可为 nullptr
+ * @param ampCurve        幅值时序图数据容器（key, amp），可为 nullptr
+ * @param phaseCurve      相位时序图数据容器（key, phase），可为 nullptr
+ */
 void DataAcquisitionThread::registerCurveData(int probeIndex,
                                                QVector<QCPCurveData> *impedanceCurve,
                                                QVector<QCPGraphData> *ampCurve,
                                                QVector<QCPGraphData> *phaseCurve)
 {
+    // 确保 m_curveRefs 容量覆盖到该探头索引
     if (probeIndex >= m_curveRefs.size()) {
         m_curveRefs.resize(probeIndex + 1);
     }
@@ -59,6 +72,7 @@ void DataAcquisitionThread::registerCurveData(int probeIndex,
         phaseCurve->reserve(CURVE_CAPACITY);
     }
 
+    // 存储指针，run() 中直接 append 到这些容器
     m_curveRefs[probeIndex].impedanceCurve = impedanceCurve;
     m_curveRefs[probeIndex].ampCurve       = ampCurve;
     m_curveRefs[probeIndex].phaseCurve     = phaseCurve;

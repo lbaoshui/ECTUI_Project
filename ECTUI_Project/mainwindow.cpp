@@ -6,6 +6,8 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
@@ -857,6 +859,10 @@ void MainWindow::setupConnections()
             qDebug() << "[MainWindow] 探头配置已保存到文件:" << filePath;
         }
     });
+
+    // ── 加载采集数据（CSV） ──
+    connect(m_stackLoadDataBtn, &QPushButton::clicked,
+            this, &MainWindow::onLoadDataClicked);
 
     // ── SaveManager 相关连接 ─────────────────────
 
@@ -1809,4 +1815,178 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     }
 
     return QMainWindow::eventFilter(obj, event);
+}
+
+/**
+ * @brief 从 CSV 文件加载历史采集数据并显示到绘图区
+ *
+ * 1. 选择 CSV 文件与目标探头
+ * 2. 解析 #Balance / #Rotation 元数据头
+ * 3. 读取原始数据点
+ * 4. 将元数据恢复到探头（平衡点 + 旋转角）
+ * 5. 应用与采集线程相同的变换管线（减平衡点 → 旋转）
+ * 6. 写入 plot1（阻抗平面）与 plot2（A 扫图）
+ *
+ * 兼容旧格式：无 #Balance / #Rotation 头时，按零值处理。
+ */
+void MainWindow::onLoadDataClicked()
+{
+    // ── 1. 选择 CSV 文件 ──
+    const QString filePath = QFileDialog::getOpenFileName(
+        this, tr("加载采集数据"), QString(), tr("CSV 文件 (*.csv)"));
+    if (filePath.isEmpty()) return;
+
+    // ── 2. 选择目标探头 ──
+    const auto probes = m_probeManager->allProbes();
+    QStringList probeNames;
+    for (int i = 0; i < probes.size(); ++i) {
+        if (probes[i])
+            probeNames << tr("探头 %1").arg(i + 1);
+    }
+    if (probeNames.isEmpty()) return;
+
+    bool ok = false;
+    const QString sel = QInputDialog::getItem(this, tr("加载数据"),
+        tr("选择目标探头:"), probeNames, 0, false, &ok);
+    if (!ok || sel.isEmpty()) return;
+
+    const int probeIdx = probeNames.indexOf(sel);
+    if (probeIdx < 0 || probeIdx >= probes.size()) return;
+    Probe *probe = probes[probeIdx];
+    if (!probe) return;
+
+    // ── 3. 打开文件并解析 ──
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("加载失败"),
+            tr("无法打开文件: %1").arg(filePath));
+        return;
+    }
+
+    QTextStream in(&file);
+    float fileBalanceAmp = 0.0f, fileBalancePhase = 0.0f;
+    bool fileHasBalance = false;
+    float fileRotation = 0.0f;
+
+    // 预分配容量，避免频繁扩容
+    QVector<float> rawAmp, rawPhase;
+    rawAmp.reserve(500000);
+    rawPhase.reserve(500000);
+
+    while (!in.atEnd()) {
+        const QString line = in.readLine().trimmed();
+        if (line.isEmpty()) continue;
+
+        // # 开头的行为元数据注释行
+        if (line.startsWith('#')) {
+            if (line.startsWith(QStringLiteral("#Balance:"))) {
+                const QString val = line.mid(9);
+                const int comma = val.indexOf(',');
+                if (comma > 0) {
+                    fileBalanceAmp   = val.left(comma).toFloat();
+                    fileBalancePhase = val.mid(comma + 1).toFloat();
+                    fileHasBalance = true;
+                }
+            } else if (line.startsWith(QStringLiteral("#Rotation:"))) {
+                fileRotation = line.mid(10).toFloat();
+            }
+            continue;
+        }
+
+        // 数据行格式: amp,phase
+        const int comma = line.indexOf(',');
+        if (comma <= 0) continue;
+
+        rawAmp.append(line.left(comma).toFloat());
+        rawPhase.append(line.mid(comma + 1).toFloat());
+    }
+    file.close();
+
+    if (rawAmp.isEmpty()) {
+        QMessageBox::information(this, tr("加载数据"),
+            tr("文件中没有有效数据。"));
+        return;
+    }
+
+    // ── 4. 恢复探头元数据 ──
+    if (fileHasBalance) {
+        probe->setBalancePoint(fileBalanceAmp, fileBalancePhase);
+    }
+    probe->setRotationAngle(fileRotation);
+
+    // ── 5. 更新顶部参数显示标签 ──
+    if (fileHasBalance) {
+        m_rotationAngleLabel->setText(tr("Balance: %.1f, %.1f  Rot: %.1fdg")
+            .arg(static_cast<double>(fileBalanceAmp))
+            .arg(static_cast<double>(fileBalancePhase))
+            .arg(static_cast<double>(fileRotation)));
+    } else {
+        m_rotationAngleLabel->setText(tr("Rotation Angle: %.1fdg")
+            .arg(static_cast<double>(fileRotation)));
+    }
+
+    // ── 6. 预计算旋转三角函数（角度为 0 时跳过） ──
+    const float balAmp   = fileHasBalance ? fileBalanceAmp : 0.0f;
+    const float balPhase = fileHasBalance ? fileBalancePhase : 0.0f;
+    const bool needRotate = std::fabs(fileRotation) > 1e-6f;
+    float cosA = 1.0f, sinA = 0.0f;
+    if (needRotate) {
+        const float rad = fileRotation * static_cast<float>(M_PI) / 180.0f;
+        cosA = std::cos(rad);
+        sinA = std::sin(rad);
+    }
+
+    // ── 7. 逐点变换：减平衡点 → 旋转 ──
+    const int nPoints = rawAmp.size();
+    QVector<double> plot1_x(nPoints), plot1_y(nPoints);
+    QVector<double> plot2_keys(nPoints), plot2_amp(nPoints), plot2_phase(nPoints);
+
+    for (int i = 0; i < nPoints; ++i) {
+        float ampVal   = rawAmp[i];
+        float phaseVal = rawPhase[i];
+
+        // ① 减去平衡点（图像居中）
+        if (fileHasBalance) {
+            ampVal   -= balAmp;
+            phaseVal -= balPhase;
+        }
+
+        // ② 二维旋转变换
+        if (needRotate) {
+            const float x = ampVal;
+            const float y = phaseVal;
+            ampVal   = x * cosA - y * sinA;
+            phaseVal = x * sinA + y * cosA;
+        }
+
+        const double dKey = static_cast<double>(i);
+        plot1_x[i] = static_cast<double>(ampVal);   // 阻抗图 X = 实部
+        plot1_y[i] = static_cast<double>(phaseVal);  // 阻抗图 Y = 虚部
+        plot2_keys[i]  = dKey;
+        plot2_amp[i]   = static_cast<double>(ampVal);
+        plot2_phase[i] = static_cast<double>(phaseVal);
+    }
+
+    // ── 8. 写入绘图区 ──
+
+    // plot1：阻抗平面散点图（X=实部/amp，Y=虚部/phase）
+    m_plot1->graph(0)->setData(plot1_x, plot1_y, true);
+    m_plot1->rescaleAxes();
+    m_plot1->replot();
+
+    // plot2：A 扫时序图（红色=幅值，绿色=相位）
+    m_plot2->graph(0)->setData(plot2_keys, plot2_amp, true);
+    if (m_plot2->graphCount() < 2) {
+        m_plot2->addGraph();
+        m_plot2->graph(1)->setPen(QPen(Qt::green));
+    }
+    m_plot2->graph(1)->setData(plot2_keys, plot2_phase, true);
+    m_plot2->rescaleAxes();
+    m_plot2->replot();
+
+    qDebug() << "[MainWindow] 加载数据:" << filePath
+             << "点数:" << nPoints
+             << "探头:" << (probeIdx + 1)
+             << "平衡点:" << balAmp << balPhase
+             << "旋转:" << fileRotation;
 }

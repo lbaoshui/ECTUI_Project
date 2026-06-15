@@ -78,6 +78,9 @@ private slots:
     // 同步探头曲线容器与采集线程注册（探头数变化时调用）
     void syncProbeCurves();
 
+    // 开始采集（含定时器启动）
+    void startAcquisition();
+
 private:
     Ui::MainWindow *ui;
 
@@ -216,6 +219,7 @@ private:
     QString m_deviceHost;
     quint16 m_devicePort = 8899;
     bool m_deviceConnectionPending = false;
+    bool m_acquisitionPending = false;
 
     // 底部四个菜单分栏
     QTabWidget *m_bottomTabWidget;

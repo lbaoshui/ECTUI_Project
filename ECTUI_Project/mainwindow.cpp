@@ -817,16 +817,24 @@ void MainWindow::setupConnections()
             [this](ConnectionState state) {
                 updateDeviceConnectionStatusText();
 
-                if (!m_deviceConnectionPending || state != ConnectionState::Connected) {
+                if (state != ConnectionState::Connected)
                     return;
+
+                // 手动连接设备提示
+                if (m_deviceConnectionPending) {
+                    m_deviceConnectionPending = false;
+                    QMessageBox::information(this,
+                                             tr("连接设备成功"),
+                                             tr("已成功连接到下位机 %1:%2。")
+                                                 .arg(m_deviceHost)
+                                                 .arg(m_devicePort));
                 }
 
-                m_deviceConnectionPending = false;
-                QMessageBox::information(this,
-                                         tr("连接设备成功"),
-                                         tr("已成功连接到下位机 %1:%2。")
-                                             .arg(m_deviceHost)
-                                             .arg(m_devicePort));
+                // 因用户点击"开始采集"而触发的连接 → 自动开始采集
+                if (m_acquisitionPending) {
+                    m_acquisitionPending = false;
+                    startAcquisition();
+                }
             });
 
     connect(m_deviceManager,
@@ -835,17 +843,20 @@ void MainWindow::setupConnections()
             [this](const QString &message) {
                 updateDeviceConnectionStatusText();
 
-                if (!m_deviceConnectionPending) {
-                    return;
+                if (m_deviceConnectionPending) {
+                    m_deviceConnectionPending = false;
+                    QMessageBox::warning(this,
+                                         tr("连接设备失败"),
+                                         tr("连接到下位机 %1:%2 失败：\n%3")
+                                             .arg(m_deviceHost)
+                                             .arg(m_devicePort)
+                                             .arg(message));
                 }
 
-                m_deviceConnectionPending = false;
-                QMessageBox::warning(this,
-                                     tr("连接设备失败"),
-                                     tr("连接到下位机 %1:%2 失败：\n%3")
-                                         .arg(m_deviceHost)
-                                         .arg(m_devicePort)
-                                         .arg(message));
+                // 因采集触发的连接失败 → 清除标志，不开始采集
+                if (m_acquisitionPending) {
+                    m_acquisitionPending = false;
+                }
             });
 
     // ── 加载/保存探头配置文件 ──────────────────
@@ -900,17 +911,37 @@ void MainWindow::setupConnections()
         if (m_acquisitionThread->isAcquiring()) {
             // 正在采集 → 停止
             m_acquisitionThread->stop();
+            m_plotRefreshTimer->stop();
             m_saveManager->onAcquisitionStopped();
         } else {
-            // 未采集 → 开始
-            m_saveManager->onAcquisitionStarted();
-            m_acquisitionThread->start();
-            m_stackStartAcquisitionBtn->setText(tr("停止\n采集"));
+            // 未采集 → 检查设备连接
+            const auto cs = m_deviceManager->connectionState();
+            if (cs == ConnectionState::Connected) {
+                startAcquisition();
+                return;
+            }
+            if (cs == ConnectionState::Connecting) {
+                QMessageBox::information(this, tr("提示"),
+                    tr("设备正在连接中，请等待连接完成后再开始采集。"));
+                return;
+            }
+            // 未连接 → 提示用户连接
+            const auto result = QMessageBox::question(this, tr("设备未连接"),
+                tr("下位机设备未连接，是否现在连接？"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (result != QMessageBox::Yes)
+                return;
+            m_acquisitionPending = true;
+            connectToRemoteDevice();
+            // 用户在连接对话框中取消 → 清除等待标志
+            if (!m_deviceConnectionPending)
+                m_acquisitionPending = false;
         }
     });
 
-    // ── 采集线程完全退出后复位按钮文字 ──
+    // ── 采集线程完全退出后复位 UI ──
     connect(m_acquisitionThread, &DataAcquisitionThread::acquisitionStopped, this, [this]() {
+        m_plotRefreshTimer->stop();
         m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
     });
 
@@ -927,11 +958,10 @@ void MainWindow::setupConnections()
     connect(m_probeManager, &ProbeManager::probeCountChanged,
             this, &MainWindow::syncProbeCurves);
 
-    // ── 定时器刷新绘图曲线（~25 fps） ──
+    // ── 定时器刷新绘图曲线（~25 fps），启动/停止跟随采集 ──
     m_plotRefreshTimer = new QTimer(this);
     m_plotRefreshTimer->setInterval(20);
     connect(m_plotRefreshTimer, &QTimer::timeout, this, &MainWindow::refreshPlots);
-    m_plotRefreshTimer->start();
 }
 
 /**
@@ -2072,4 +2102,12 @@ void MainWindow::syncProbeCurves()
     // 若当前显示索引越界，回退到 0
     if (m_displayProbeIndex >= newCount)
         m_displayProbeIndex = 0;
+}
+
+void MainWindow::startAcquisition()
+{
+    m_saveManager->onAcquisitionStarted();
+    m_acquisitionThread->start();
+    m_plotRefreshTimer->start();
+    m_stackStartAcquisitionBtn->setText(tr("停止\n采集"));
 }

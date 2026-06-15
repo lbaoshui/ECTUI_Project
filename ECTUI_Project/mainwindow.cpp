@@ -1844,7 +1844,22 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
     if (obj == m_connectionStatusLabel2 && event->type() == QEvent::MouseButtonDblClick)
     {
-        connectToRemoteDevice();
+        if (m_deviceManager->connectionState() == ConnectionState::Connecting) {
+            // 正在连接中 → 双击取消连接
+            const auto result = QMessageBox::question(this, tr("取消连接"),
+                tr("设备正在连接中，是否取消？"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (result == QMessageBox::Yes) {
+                // 二次检查：弹窗期间连接可能已完成，只在仍 Connecting 时才断开
+                if (m_deviceManager->connectionState() == ConnectionState::Connecting)
+                    m_deviceManager->disconnectFromDevice();
+                m_deviceConnectionPending = false;
+                m_acquisitionPending = false;
+                updateDeviceConnectionStatusText();
+            }
+        } else {
+            connectToRemoteDevice();
+        }
         return true;
     }
 

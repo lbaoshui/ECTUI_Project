@@ -156,6 +156,12 @@ void DeviceManager::disconnectFromDevice()
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         m_socket->waitForDisconnected(1000);
     }
+
+    // 同步更新状态，调用方无需等待异步 onDisconnected 回调
+    if (m_connState != ConnectionState::Disconnected) {
+        m_connState = ConnectionState::Disconnected;
+        emit connectionStateChanged(m_connState);
+    }
 }
 
 // 发送DA配置,即为激励的DA通道配置参数，如频率、相位、幅值、
@@ -344,8 +350,10 @@ void DeviceManager::onConnected()
 void DeviceManager::onDisconnected()
 {
     resetStreamingState();
-    m_connState = ConnectionState::Disconnected;
-    emit connectionStateChanged(m_connState);
+    if (m_connState != ConnectionState::Disconnected) {
+        m_connState = ConnectionState::Disconnected;
+        emit connectionStateChanged(m_connState);
+    }
 }
 
 // socket错误，更新标志位 

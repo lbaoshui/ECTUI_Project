@@ -951,6 +951,10 @@ void MainWindow::setupConnections()
     connect(m_stackSetRotationAngleBtn, &QPushButton::clicked,
             this, &MainWindow::onRotationAngleClicked);
 
+    // ── 后置增益按钮 ──
+    connect(m_stackSetPostGainBtn, &QPushButton::clicked,
+            this, &MainWindow::onPostGainClicked);
+
     // ── 同步探头曲线容器到采集线程（初始 + 探头数变化时重注册） ──
     syncProbeCurves();
     connect(m_probeManager, &ProbeManager::probeCountChanged,
@@ -1566,6 +1570,9 @@ void MainWindow::updateProbeParameterDisplay()
         m_realImaginaryLabel->setText(tr("Real: -- Imaginary: --"));
         m_digFilterLabel->setText(tr("Dig Filter: --"));
         m_shiftLabel->setText(tr("Shift X/Y: --"));
+        m_postGainLabel->setText(tr("Post Gain: %1 (range: %2)")
+            .arg(m_postGain)
+            .arg(qMax(100.0, 2000.0 - (m_postGain - 20) * 100.0), 0, 'f', 0));
         return;
     }
 
@@ -1649,6 +1656,11 @@ void MainWindow::updateProbeParameterDisplay()
         m_shiftLabel->setText(tr("[P%1] Shift X/Y:0/0mV")
             .arg(m_displayProbeIndex + 1));
     }
+
+    // 后置增益（全局参数，非探头独立）
+    m_postGainLabel->setText(tr("Post Gain: %1 (range: %2)")
+        .arg(m_postGain)
+        .arg(qMax(100.0, 2000.0 - (m_postGain - 20) * 100.0), 0, 'f', 0));
 }
 
 /** @brief 虚拟方向键「上」——菜单/参数导航（待实现） */
@@ -1843,6 +1855,19 @@ void MainWindow::onRotationAngleClicked()
     updateProbeParameterDisplay();
 }
 
+void MainWindow::onPostGainClicked()
+{
+    bool ok = false;
+    const int gain = QInputDialog::getInt(this, tr("后置增益"),
+        tr("后置增益（基准值20，范围2000；每增减1，坐标轴范围增减100（暂用方案）："),
+        m_postGain, 1, 100, 1, &ok);
+    if (!ok) return;
+
+    m_postGain = gain;
+    updateProbeParameterDisplay();
+    updateplot1_zerotickerLine_0();
+}
+
 /**
  * @brief 底部 Tab 切换时同步右侧 StackedWidget 页面
  * @param index 0=Main, 1=File, 2=Scanners, 3=Parameters
@@ -1977,14 +2002,17 @@ void MainWindow::updateplot1_zerotickerLine_0()
     // int ratio = qMax(plot1_size_width, plot1_size_height) / qMin(plot1_size_width, plot1_size_height);
     double ratio = plot1_size_width / plot1_size_height;
 
+    // 后置增益影响坐标轴范围：增益越大范围越小，曲线显示越大；基准值20→2000
+    double baseRange = qMax(100.0, 2000.0 - (m_postGain - 20) * 100.0);
+
     if (ratio >= 1)
     {
-        m_plot1->xAxis->setRange(- ratio*2000, ratio*2000);
-        m_plot1->yAxis->setRange(- 2000, 2000);
+        m_plot1->xAxis->setRange(- ratio*baseRange, ratio*baseRange);
+        m_plot1->yAxis->setRange(- baseRange, baseRange);
         // qDebug() << " ratio1:  " << ratio;
     } else {
-        m_plot1->yAxis->setRange(- 2000/ratio, 2000/ratio);
-        m_plot1->xAxis->setRange(- 2000, 2000);
+        m_plot1->yAxis->setRange(- baseRange/ratio, baseRange/ratio);
+        m_plot1->xAxis->setRange(- baseRange, baseRange);
         // qDebug() << " ratio2:  " << ratio;
     }
 

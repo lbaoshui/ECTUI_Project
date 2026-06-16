@@ -68,9 +68,10 @@ private slots:
     // 采样率设置
     void onSetSampleRateClicked();
 
-    // 平衡点（自动清零）与旋转角度
+    // 平衡点（自动清零）、旋转角度与后置增益
     void onAutoZeroClicked();
     void onRotationAngleClicked();
+    void onPostGainClicked();
 
     // 数据加载
     void onLoadDataClicked();
@@ -229,6 +230,7 @@ private:
     quint16 m_devicePort = 8899;
     bool m_deviceConnectionPending = false;
     bool m_acquisitionPending = false;
+    int m_postGain = 20;  // 后置增益，基准值20→2000，增益越大范围越小（曲线显示越大）
 
     // 底部四个菜单分栏
     QTabWidget *m_bottomTabWidget;

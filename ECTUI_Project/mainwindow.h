@@ -195,6 +195,15 @@ private:
     QVector<ProbeCurveContainers> m_probeCurves;
     int m_displayProbeIndex = 0;
 
+    // 加载数据的独立曲线容器（不占用采集曲线容量）
+    struct LoadedCurveContainers {
+        QVector<QCPCurveData> impedance;
+        QVector<QCPGraphData> amplitude;
+        QVector<QCPGraphData> phase;
+    };
+    LoadedCurveContainers m_loadedCurves;
+    bool m_hasLoadedData = false;
+
     // 绘图区3（左下）
     QFrame *m_plotArea3;
     QVBoxLayout *m_plotArea3Layout;

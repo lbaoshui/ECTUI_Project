@@ -2258,7 +2258,17 @@ void MainWindow::onLoadDataClicked()
     }
     probe->setRotationAngle(fileRotation);
 
-    // ── 5. 预计算旋转三角函数（角度为 0 时跳过） ──
+    // ── 5. 保存原始数据到探头容器（变换前） ──
+    {
+        ProbeData *sd = probe->saveData();
+        sd->AssignedMemoryForProbeData(rawAmp.size(), rawPhase.size());
+        for (int i = 0; i < rawAmp.size(); ++i) {
+            (*sd->m_rawData_amp)[i]   = rawAmp[i];
+            (*sd->m_rawData_phase)[i] = rawPhase[i];
+        }
+    }
+
+    // ── 6. 预计算旋转三角函数 ──
     const float balAmp   = fileHasBalance ? fileBalanceAmp : 0.0f;
     const float balPhase = fileHasBalance ? fileBalancePhase : 0.0f;
     const bool needRotate = std::fabs(fileRotation) > 1e-6f;
@@ -2269,22 +2279,24 @@ void MainWindow::onLoadDataClicked()
         sinA = std::sin(rad);
     }
 
-    // ── 7. 逐点变换：减平衡点 → 旋转 ──
+    // ── 7. 逐点变换并填充独立加载曲线容器（不影响采集曲线容量） ──
     const int nPoints = rawAmp.size();
-    QVector<double> plot1_x(nPoints), plot1_y(nPoints);
-    QVector<double> plot2_keys(nPoints), plot2_amp(nPoints), plot2_phase(nPoints);
+    m_loadedCurves.impedance.clear();
+    m_loadedCurves.amplitude.clear();
+    m_loadedCurves.phase.clear();
+    m_loadedCurves.impedance.reserve(nPoints);
+    m_loadedCurves.amplitude.reserve(nPoints);
+    m_loadedCurves.phase.reserve(nPoints);
 
     for (int i = 0; i < nPoints; ++i) {
         float ampVal   = rawAmp[i];
         float phaseVal = rawPhase[i];
 
-        // ① 减去平衡点（图像居中）
         if (fileHasBalance) {
             ampVal   -= balAmp;
             phaseVal -= balPhase;
         }
 
-        // ② 二维旋转变换
         if (needRotate) {
             const float x = ampVal;
             const float y = phaseVal;
@@ -2293,26 +2305,23 @@ void MainWindow::onLoadDataClicked()
         }
 
         const double dKey = static_cast<double>(i);
-        plot1_x[i] = static_cast<double>(ampVal);   // 阻抗图 X = 实部
-        plot1_y[i] = static_cast<double>(phaseVal);  // 阻抗图 Y = 虚部
-        plot2_keys[i]  = dKey;
-        plot2_amp[i]   = static_cast<double>(ampVal);
-        plot2_phase[i] = static_cast<double>(phaseVal);
+        m_loadedCurves.impedance.append(QCPCurveData(dKey, static_cast<double>(ampVal), static_cast<double>(phaseVal)));
+        m_loadedCurves.amplitude.append(QCPGraphData(dKey, static_cast<double>(ampVal)));
+        m_loadedCurves.phase.append(QCPGraphData(dKey, static_cast<double>(phaseVal)));
     }
 
-    // ── 8. 写入绘图区 ──
+    m_hasLoadedData = true;
 
-    // plot1：阻抗平面散点图（X=实部/amp，Y=虚部/phase）
-    m_plot1->graph(0)->setData(plot1_x, plot1_y, true);
-    m_plot1->rescaleAxes();
-    m_plot1->replot();
-
-    // plot2：A 扫时序图（红色=幅值，绿色=相位）
+    // ── 8. 从加载曲线容器刷新到绘图曲线 ──
+    if (m_impedance_curve)
+        m_impedance_curve->data()->set(m_loadedCurves.impedance, true);
     if (m_amplitude_curve)
-        m_amplitude_curve->setData(plot2_keys, plot2_amp, true);
+        m_amplitude_curve->data()->set(m_loadedCurves.amplitude, true);
     if (m_phase_curve)
-        m_phase_curve->setData(plot2_keys, plot2_phase, true);
-    m_plot2->rescaleAxes();
+        m_phase_curve->data()->set(m_loadedCurves.phase, true);
+
+    updateplot1_zerotickerLine_0();
+    m_plot1->replot();
     m_plot2->replot();
 
     qDebug() << "[MainWindow] 加载数据:" << filePath
@@ -2468,6 +2477,14 @@ void MainWindow::onStartAcquisitionBtnClicked()
 
 void MainWindow::startAcquisition()
 {
+    // 清空加载数据的曲线，让位给实时采集数据
+    if (m_hasLoadedData) {
+        m_loadedCurves.impedance.clear();
+        m_loadedCurves.amplitude.clear();
+        m_loadedCurves.phase.clear();
+        m_hasLoadedData = false;
+    }
+
     // 下发 DA 配置（新协议：全局 DDS 频率/相位，所有通道共用）
     m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
     // 设置帧长

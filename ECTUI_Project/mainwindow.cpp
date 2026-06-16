@@ -1121,7 +1121,9 @@ void MainWindow::initializePlots()
     m_plot2->yAxis->setLabelPadding(0);
     m_plot2->yAxis->setTickLabelPadding(0);
 
-    QObject::connect(this, &MainWindow::plot2size_changed, this, &MainWindow::updateplot2_Double_axis_line);
+    QObject::connect(this, &MainWindow::plot2size_changed,
+                     this, &MainWindow::updateplot2_Double_axis_line,
+                     Qt::QueuedConnection);
     m_plot2->installEventFilter(this);
 
     // 隐藏子刻度线
@@ -1922,7 +1924,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         QSize newSize = static_cast<QResizeEvent*>(event)->size();
         // qDebug() << "customPlot2 resized to:" << newSize;
 
-        m_plot2->replot();
         emit plot2size_changed();
     }
 

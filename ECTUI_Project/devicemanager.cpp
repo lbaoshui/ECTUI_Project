@@ -229,6 +229,138 @@ QVector<DaChannelConfig> DeviceManager::defaultDaConfig() const
 }
 
 
+// ─────────────────────────────────────────────
+// 新协议 DA 配置（AD7768，全局参数，所有通道共用）
+//
+// 新协议采用 16 字节定长命令帧，与旧协议 12+16×16 字节 DA 配置帧完全不同。
+// 新协议所有通道共用同一套 DDS 激励参数，不需要逐通道下发。
+// 格式依据 AD7768_TCP_Protocol.md §4：
+//   Offset 0: 命令字 (uint32 LE)
+//   Offset 4: 保留，填 0
+//   Offset 8: 保留，填 0
+//   Offset12: 参数值 (uint32 LE)
+// ─────────────────────────────────────────────
+
+// 构建新协议 16 字节命令帧。
+// 帧布局：cmd(4B) + reserved(4B) + reserved(4B) + param(4B)，全部 little-endian。
+QByteArray DeviceManager::buildNewCmdFrame(quint32 cmd, quint32 param) const
+{
+    QByteArray frame(16, '\0');
+    char *data = frame.data();
+    qToLittleEndian(cmd,   reinterpret_cast<uchar *>(data));       // [0:4)  命令字
+    // offset [4:8)  保留为 0
+    // offset [8:12) 保留为 0
+    qToLittleEndian(param, reinterpret_cast<uchar *>(data + 12));  // [12:16) 参数值
+    return frame;
+}
+
+// 发送 16 字节命令的通用入口：校验连接态 → 打包 → 写入 socket → 等待刷新。
+// 所有新协议 DDS/帧长命令最终都走此函数，避免散落重复的连接判断和错误处理。
+bool DeviceManager::sendNewCmd(quint32 cmd, quint32 param)
+{
+    if (m_connState != ConnectionState::Connected) {
+        emit errorOccurred(QStringLiteral("设备未连接，无法发送命令 0x%1。").arg(cmd, 8, 16, QLatin1Char('0')));
+        return false;
+    }
+
+    const QByteArray frame = buildNewCmdFrame(cmd, param);
+    const qint64 written = m_socket->write(frame);
+    if (written != frame.size()) {
+        emit errorOccurred(QStringLiteral("命令 0x%1 发送失败。").arg(cmd, 8, 16, QLatin1Char('0')));
+        return false;
+    }
+    return m_socket->waitForBytesWritten(1000);
+}
+
+// 新协议 DA 配置：发送全局 DDS 激励频率和相位，所有通道共用。
+// 取 channels 首个元素的 freq/phase 作为全局参数下发，不区分通道。
+bool DeviceManager::sendDaConfigNew(const QVector<DaChannelConfig> &channels)
+{
+    if (m_connState != ConnectionState::Connected) {
+        emit errorOccurred(QStringLiteral("设备未连接，无法发送 DA 配置（新协议）。"));
+        return false;
+    }
+
+    if (channels.isEmpty())
+        return true;
+
+    const DaChannelConfig &ch = channels.first();
+
+    // PS 端收到 0xAA55FFD4 后按 fword = round(freqHz * 2^32 / 50e6) 换算 DDS 频率控制字
+    if (!sendDdsFreqHz(static_cast<quint32>(ch.freq)))
+        return false;
+    // 相位字直接透传给 DDS 初始相位寄存器
+    if (!sendDdsPhase(static_cast<quint32>(ch.phase)))
+        return false;
+    return true;
+}
+
+// 设置全局 DDS 激励频率（Hz），所有通道共用。
+// PS 端收到后自动完成 fword 换算：fword = round(freqHz * 2^32 / 50000000.0)
+bool DeviceManager::sendDdsFreqHz(quint32 freqHz)
+{
+    return sendNewCmd(CMD_SET_FREQ_HZ, freqHz);
+}
+
+// 设置全局 DDS 初始相位字（32-bit），所有通道共用。
+bool DeviceManager::sendDdsPhase(quint32 phaseWord)
+{
+    return sendNewCmd(CMD_SET_PHASE, phaseWord);
+}
+
+// 设置每包帧数（frame_count），建议范围 1–1024。
+bool DeviceManager::sendFrameLength(quint32 frameCount)
+{
+    return sendNewCmd(CMD_SET_FRAME, frameCount);
+}
+
+// ─────────────────────────────────────────────
+// 新协议 采集控制（4 字节命令）
+//
+// 采集控制采用 4 字节精简命令，与旧协议 AD_START_CMD (0xA0FF55AA) 结构类似但命令字不同。
+// 格式：单个 uint32 LE，无额外参数。
+// ─────────────────────────────────────────────
+
+// 构建新协议 4 字节采集控制命令。
+QByteArray DeviceManager::buildNewAcqCmd(quint32 cmd) const
+{
+    QByteArray frame(4, '\0');
+    qToLittleEndian(cmd, reinterpret_cast<uchar *>(frame.data()));
+    return frame;
+}
+
+// 发送 4 字节采集控制命令的通用入口。
+bool DeviceManager::sendNewAcqCmd(quint32 cmd)
+{
+    if (m_connState != ConnectionState::Connected) {
+        emit errorOccurred(QStringLiteral("设备未连接，无法发送采集控制命令。"));
+        return false;
+    }
+
+    const QByteArray frame = buildNewAcqCmd(cmd);
+    const qint64 written = m_socket->write(frame);
+    if (written != frame.size()) {
+        emit errorOccurred(QStringLiteral("采集控制命令发送失败。"));
+        return false;
+    }
+    return m_socket->waitForBytesWritten(1000);
+}
+
+// 开始采集：发送 0xAA55FFA0，PS 收到后启动 AD7768 数据上传。
+bool DeviceManager::sendStartAcquisition()
+{
+    return sendNewAcqCmd(CMD_START_ACQ);
+}
+
+// 停止采集：发送 0xAA55FFB1，PS 收到后停止数据上传。
+bool DeviceManager::sendStopAcquisition()
+{
+    return sendNewAcqCmd(CMD_STOP_ACQ);
+}
+
+// ─────────────────────────────────────────────
+// 旧协议 AD 控制
+
 // 发送采样率配置
 bool DeviceManager::sendSampleRateConfig(SampleRate rate)
 {

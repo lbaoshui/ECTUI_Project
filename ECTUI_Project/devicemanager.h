@@ -174,9 +174,9 @@ public:
     void disconnectFromDevice();
     ConnectionState connectionState() const { return m_connState; }
 
-    // ── DA 配置 ───────────────────────────────
+    // ── DA 配置（旧协议）─────────────────────
     /**
-     * @brief 发送 DA 通道配置
+     * @brief 发送 DA 通道配置（旧硬件协议）
      * @param channels 长度必须为 16，不足 16 项将返回 false
      * @return 发送是否成功（连接已建立且写入无误）
      */
@@ -187,7 +187,35 @@ public:
      */
     QVector<DaChannelConfig> defaultDaConfig() const;
 
-    // ── AD 控制 ───────────────────────────────
+    // ── DA 配置（新协议 AD7768）───────────────
+    /**
+     * @brief 发送新协议 DA 配置（全局 DDS 频率与相位，所有通道共用）
+     *
+     * 新协议不区分通道，取 channels 第一个有效通道的 freq/phase 作为全局参数。
+     * @param channels 配置列表，仅取首个有效通道
+     * @return 发送是否成功
+     */
+    bool sendDaConfigNew(const QVector<DaChannelConfig> &channels);
+
+    /**
+     * @brief 设置全局 DDS 激励频率（Hz），所有通道共用
+     * @param freqHz 激励频率，单位 Hz
+     */
+    bool sendDdsFreqHz(quint32 freqHz);
+
+    /**
+     * @brief 设置全局 DDS 相位字，所有通道共用
+     * @param phaseWord 32-bit DDS 初始相位字
+     */
+    bool sendDdsPhase(quint32 phaseWord);
+
+    /**
+     * @brief 设置帧长（新协议）
+     * @param frameCount 每包帧数，建议 1–1024
+     */
+    bool sendFrameLength(quint32 frameCount);
+
+    // ── AD 控制（旧协议）─────────────────────
     /**
      * @brief 发送采样率配置帧
      * @param rate 枚举值，仅支持五档
@@ -198,11 +226,22 @@ public:
     SampleRate currentSampleRate() const { return m_currentSampleRate; }
 
     /**
-     * @brief 发送启动采样命令
+     * @brief 发送启动采样命令（旧协议）
      *
      * 与 Python 版本 ad_start_sample_conf() 对应，发送 4 字节固定命令帧。
      */
     bool startSampling();
+
+    // ── AD 控制（新协议 AD7768）───────────────
+    /**
+     * @brief 发送开始采集命令（新协议 0xAA55FFA0）
+     */
+    bool sendStartAcquisition();
+
+    /**
+     * @brief 发送停止采集命令（新协议 0xAA55FFB1）
+     */
+    bool sendStopAcquisition();
 
     // ── 数据读取 ──────────────────────────────
     /** @brief 获取最近一帧解析好的 ADC 数据（线程安全） */
@@ -265,12 +304,20 @@ private slots:
     void onDataReceived_New();
 
 private:
-    // ── 帧打包辅助 ────────────────────────────
-    // 这三个函数只负责“协议层”的二进制打包，
-    // 业务层只需要准备结构化参数，不需要关心 little-endian 细节。
+    // ── 帧打包辅助（旧协议）───────────────────
     QByteArray buildDaFrame(const QVector<DaChannelConfig> &channels) const;
     QByteArray buildSampleRateFrame(SampleRate rate) const;
     QByteArray buildStartSampleFrame() const;
+
+    // ── 帧打包辅助（新协议 AD7768）────────────
+    /** @brief 构建新协议 16 字节命令帧（cmd + reserved + reserved + param） */
+    QByteArray buildNewCmdFrame(quint32 cmd, quint32 param) const;
+    /** @brief 构建新协议 4 字节采集控制命令 */
+    QByteArray buildNewAcqCmd(quint32 cmd) const;
+    /** @brief 发送 16 字节命令帧并等待写入完成 */
+    bool sendNewCmd(quint32 cmd, quint32 param);
+    /** @brief 发送 4 字节采集控制命令 */
+    bool sendNewAcqCmd(quint32 cmd);
 
     // ── ADC 帧解析辅助 ────────────────────────
     /**
@@ -324,6 +371,14 @@ private:
     static const QByteArray AD_RATE_CMD;         // 4 bytes
     static const QByteArray ADC_DATA_HEADER;     // 4 bytes
     static const QByteArray ADC_DATA_LEN_TAG;    // 4 bytes，[8:12] 校验用
+
+    // 新协议 AD7768 命令字
+    static constexpr quint32 CMD_START_ACQ   = 0xAA55FFA0;  // 开始采集
+    static constexpr quint32 CMD_STOP_ACQ    = 0xAA55FFB1;  // 停止采集
+    static constexpr quint32 CMD_SET_FRAME   = 0xAA55FFC1;  // 设置帧长
+    static constexpr quint32 CMD_SET_FWORD   = 0xAA55FFD2;  // 设置 DDS fword
+    static constexpr quint32 CMD_SET_PHASE   = 0xAA55FFD3;  // 设置 DDS phase
+    static constexpr quint32 CMD_SET_FREQ_HZ = 0xAA55FFD4;  // 设置 DDS 频率 Hz
 };
 
 #endif // DEVICEMANAGER_H

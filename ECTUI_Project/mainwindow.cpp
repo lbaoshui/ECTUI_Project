@@ -1547,7 +1547,7 @@ void MainWindow::updateProbeParameterDisplay()
 
     // 5. Acquisition Freq (系统采样率，非探头参数)
     {
-        const SampleRate rate = m_deviceManager->curren tSampleRate();
+        const SampleRate rate = m_deviceManager->currentSampleRate();
         QString rateText;
         switch (rate) {
         case SampleRate::SR_1K:   rateText = QStringLiteral("1kHz");   break;

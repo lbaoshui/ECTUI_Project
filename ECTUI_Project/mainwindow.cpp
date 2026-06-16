@@ -908,37 +908,8 @@ void MainWindow::setupConnections()
             m_saveManager, &SaveManager::onSaveDataReady);
 
     // ── 采集开始/停止按钮（toggle 模式） ──
-    connect(m_stackStartAcquisitionBtn, &QPushButton::clicked, this, [this]() {
-        if (m_acquisitionThread->isAcquiring()) {
-            // 正在采集 → 停止
-            m_acquisitionThread->stop();
-            m_plotRefreshTimer->stop();
-            m_saveManager->onAcquisitionStopped();
-        } else {
-            // 未采集 → 检查设备连接
-            const auto cs = m_deviceManager->connectionState();
-            if (cs == ConnectionState::Connected) {
-                startAcquisition();
-                return;
-            }
-            if (cs == ConnectionState::Connecting) {
-                QMessageBox::information(this, tr("提示"),
-                    tr("设备正在连接中，请等待连接完成后再开始采集。"));
-                return;
-            }
-            // 未连接 → 提示用户连接
-            const auto result = QMessageBox::question(this, tr("设备未连接"),
-                tr("下位机设备未连接，是否现在连接？"),
-                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-            if (result != QMessageBox::Yes)
-                return;
-            m_acquisitionPending = true;
-            connectToRemoteDevice();
-            // 用户在连接对话框中取消 → 清除等待标志
-            if (!m_deviceConnectionPending)
-                m_acquisitionPending = false;
-        }
-    });
+    connect(m_stackStartAcquisitionBtn, &QPushButton::clicked,
+            this, &MainWindow::onStartAcquisitionBtnClicked);
 
     // ── 采集线程完全退出后复位 UI ──
     connect(m_acquisitionThread, &DataAcquisitionThread::acquisitionStopped, this, [this]() {
@@ -2299,8 +2270,52 @@ void MainWindow::syncProbeCurves()
         m_displayProbeIndex = 0;
 }
 
+void MainWindow::onStartAcquisitionBtnClicked()
+{
+    if (m_acquisitionThread->isAcquiring()) {
+        // 正在采集 → 停止
+        m_deviceManager->sendStopAcquisition();  // 通知下位机停止上传
+        m_acquisitionThread->stop();
+        m_plotRefreshTimer->stop();
+        m_saveManager->onAcquisitionStopped();
+        return;
+    }
+
+    // 未采集 → 检查设备连接
+    const auto cs = m_deviceManager->connectionState();
+    if (cs == ConnectionState::Connected) {
+        startAcquisition();
+        return;
+    }
+    if (cs == ConnectionState::Connecting) {
+        QMessageBox::information(this, tr("提示"),
+            tr("设备正在连接中，请等待连接完成后再开始采集。"));
+        return;
+    }
+
+    // 未连接 → 提示用户连接
+    const auto result = QMessageBox::question(this, tr("设备未连接"),
+        tr("下位机设备未连接，是否现在连接？"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (result != QMessageBox::Yes)
+        return;
+
+    m_acquisitionPending = true;
+    connectToRemoteDevice();
+    // 用户在连接对话框中取消 → 清除等待标志
+    if (!m_deviceConnectionPending)
+        m_acquisitionPending = false;
+}
+
 void MainWindow::startAcquisition()
 {
+    // 下发 DA 配置（新协议：全局 DDS 频率/相位，所有通道共用）
+    m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
+    // 设置帧长
+    m_deviceManager->sendFrameLength(512);
+    // 通知下位机开始上传数据
+    m_deviceManager->sendStartAcquisition();
+
     m_saveManager->onAcquisitionStarted();
     m_acquisitionThread->start();
     m_plotRefreshTimer->start();

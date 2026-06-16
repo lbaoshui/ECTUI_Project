@@ -78,6 +78,9 @@ private slots:
     // 同步探头曲线容器与采集线程注册（探头数变化时调用）
     void syncProbeCurves();
 
+    // 开始/停止采集按钮点击处理
+    void onStartAcquisitionBtnClicked();
+
     // 开始采集（含定时器启动）
     void startAcquisition();
 

@@ -1801,26 +1801,29 @@ void MainWindow::updateplot2_Double_axis_line()
 {
     m_plot2->xAxis->setOffset(-m_plot2->size().height()/4);
     m_plot2->xAxis2->setOffset(-m_plot2->size().height()/4);
-    qDebug() << " plot2 replot " << m_plot2->size().height();
     m_plot2->replot(QCustomPlot::rpQueuedReplot);
-    // 设置刻度线的网格步长和数量
-    QSharedPointer<QCPAxisTickerFixed> MyTicker(new QCPAxisTickerFixed);
-    MyTicker->setTickStep(100);
-    // MyTicker->setTickCount(20);
-    m_plot2->xAxis->setTicker(MyTicker);
-    m_plot2->xAxis2->setTicker(MyTicker);
 
-    m_plot2->yAxis->setTicker(MyTicker);
-    m_plot2->yAxis2->setTicker(MyTicker);
+    const double yRange = 400; // ±200
+    m_plot2->yAxis->setRange(-200, 200);
 
-    double plot2_size_width = -m_plot2->size().width();
-    double plot2_size_height = -m_plot2->size().height();
-    // int ratio = qMax(plot1_size_width, plot1_size_height) / qMin(plot1_size_width, plot1_size_height);
-    double ratio = plot2_size_width / plot2_size_height;
+    // Y 轴步长 100，刻度值 -200, -100, 0, 100, 200，无小数
+    const double yStep = 100;
+    auto yTicker = QSharedPointer<QCPAxisTickerFixed>::create();
+    yTicker->setTickStep(yStep);
+    m_plot2->yAxis->setTicker(yTicker);
+    m_plot2->yAxis2->setTicker(yTicker);
 
-    m_plot2->xAxis->setRange(0, ratio*1000);
-    m_plot2->yAxis->setRange(- 500, 500);
+    // X 轴步长按正方形公式计算后取整到 100 的倍数，刻度值全为 100 的整数倍
+    const double w = m_plot2->axisRect()->width();
+    const double h = m_plot2->axisRect()->height();
+    const double xRange = m_plot2->xAxis->range().size();
+    const double rawStep = yStep * (h / w) * (xRange / yRange);
+    const double xStep = qMax(100.0, qRound(rawStep / 100.0) * 100.0);
 
+    auto xTicker = QSharedPointer<QCPAxisTickerFixed>::create();
+    xTicker->setTickStep(xStep);
+    m_plot2->xAxis->setTicker(xTicker);
+    m_plot2->xAxis2->setTicker(xTicker);
 }
 
 /**
@@ -2073,6 +2076,16 @@ void MainWindow::refreshPlots()
         m_amplitude_curve->data()->set(*c.amplitude, true);
     if (m_phase_curve && c.phase && !c.phase->isEmpty())
         m_phase_curve->data()->set(*c.phase, true);
+
+    // A-scan X 轴滚动：窗口宽度 150000，数据量超窗口时跟随最新 key 滚动
+    constexpr int ASCAN_WINDOW = DataAcquisitionThread::CURVE_CLEAR_SIZE / 2;
+    if (m_amplitude_curve && m_amplitude_curve->data()->size() > 0) {
+        const double latestKey = (m_amplitude_curve->data()->constEnd() - 1)->key;
+        if (latestKey <= ASCAN_WINDOW)
+            m_plot2->xAxis->setRange(0, ASCAN_WINDOW);
+        else
+            m_plot2->xAxis->setRange(latestKey - ASCAN_WINDOW, latestKey);
+    }
 
     m_plot1->replot(QCustomPlot::rpQueuedReplot);
     m_plot2->replot(QCustomPlot::rpQueuedReplot);

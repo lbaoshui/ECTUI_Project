@@ -1067,7 +1067,7 @@ void MainWindow::initializePlots()
     m_plot2->xAxis->grid()->setVisible(true);
     m_plot2->yAxis->grid()->setVisible(true);
     m_plot2->yAxis->setTickLabels(false);
-    m_plot2->yAxis->setSubTicks(false);
+    m_plot2->yAxis->setSubTicks(true);
 
     m_plot2->xAxis->setTickLabels(true);
     m_plot2->xAxis2->setTickLabels(true);
@@ -1099,19 +1099,23 @@ void MainWindow::initializePlots()
     m_plot2->xAxis->setLabelColor(QColor("#cccccc"));
     m_plot2->yAxis->setLabelColor(QColor("#cccccc"));
     m_plot2->yAxis->setTickLabels(false);
-    m_plot2->yAxis->setSubTicks(false);
+    m_plot2->yAxis->setSubTicks(true);
     m_plot2->yAxis->setBasePen(QPen(Qt::transparent));
     m_plot2->yAxis->setTickPen(QPen(Qt::transparent));
-    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis->setSubTickPen(QPen(QColor("#666666")));
 
     m_plot2->yAxis2->setTickLabels(false);
-    m_plot2->yAxis2->setSubTicks(false);
+    m_plot2->yAxis2->setSubTicks(true);
     m_plot2->yAxis2->setBasePen(QPen(Qt::transparent));
     m_plot2->yAxis2->setTickPen(QPen(Qt::transparent));
-    m_plot2->yAxis2->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis2->setSubTickPen(QPen(QColor("#666666")));
 
     m_plot2->xAxis->setSubTickLengthIn(2);
     m_plot2->xAxis->setSubTickLengthOut(0);
+    m_plot2->yAxis->setSubTickLengthIn(2);
+    m_plot2->yAxis->setSubTickLengthOut(0);
+    m_plot2->yAxis2->setSubTickLengthIn(2);
+    m_plot2->yAxis2->setSubTickLengthOut(0);
 
     m_plot2->axisRect()->setMargins(QMargins(0,0,0,0));
     m_plot2->yAxis->setLabelPadding(0);
@@ -1127,7 +1131,7 @@ void MainWindow::initializePlots()
     m_plot2->yAxis->setBasePen(QPen(Qt::transparent));
     // 2. 刻度线透明
     m_plot2->yAxis->setTickPen(QPen(Qt::transparent));
-    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis->setSubTickPen(QPen(QColor("#666666")));
     // 3. 刻度文字隐藏
     m_plot2->yAxis->setTickLabels(false);
     // 4. 可选：把刻度长度也清零，确保不占像素
@@ -1136,7 +1140,7 @@ void MainWindow::initializePlots()
     m_plot2->yAxis->setSubTickLengthIn(0);
     m_plot2->yAxis->setSubTickLengthOut(0);
 
-    m_plot2->yAxis->setSubTickPen(QPen(Qt::transparent));
+    m_plot2->yAxis->setSubTickPen(QPen(QColor("#666666")));
     m_plot2->xAxis->setSubTickLengthIn(2);
     m_plot2->xAxis->setSubTickLengthOut(0);
     m_plot2->yAxis->setSubTickLengthIn(0);
@@ -1788,9 +1792,31 @@ void MainWindow::updateplot1_zerotickerLine_0()
 
     m_plot1->replot(QCustomPlot::rpQueuedReplot);
 
-    // updateplot2_Double_axis_line();
+    updateplot2_Double_axis_line();
 
 }
+
+/**
+ * @brief 允许手动设定子刻度数的 QCPAxisTickerFixed 子类
+ *
+ * 原生 QCPAxisTickerFixed 的 getSubTickCount 由 tick step 自动推算，
+ * 这里覆写为返回固定值，以便按页面尺寸动态调整子刻度密度。
+ */
+class QCPAxisTickerFixedWithSubTicks : public QCPAxisTickerFixed
+{
+public:
+    void setSubTickCount(int count) { mSubTickCount = count; }
+
+protected:
+    int getSubTickCount(double tickStep) Q_DECL_OVERRIDE
+    {
+        Q_UNUSED(tickStep)
+        return mSubTickCount;
+    }
+
+private:
+    int mSubTickCount = 4;
+};
 
 /**
  * @brief plot2 尺寸变化后调整 A 扫图双 X 轴偏移、刻度步长与坐标范围
@@ -1801,29 +1827,41 @@ void MainWindow::updateplot2_Double_axis_line()
 {
     m_plot2->xAxis->setOffset(-m_plot2->size().height()/4);
     m_plot2->xAxis2->setOffset(-m_plot2->size().height()/4);
-    m_plot2->replot(QCustomPlot::rpQueuedReplot);
 
     const double yRange = 400; // ±200
     m_plot2->yAxis->setRange(-200, 200);
 
-    // Y 轴步长 100，刻度值 -200, -100, 0, 100, 200，无小数
-    const double yStep = 100;
-    auto yTicker = QSharedPointer<QCPAxisTickerFixed>::create();
+    const double w = m_plot2->axisRect()->width();
+    const double h = m_plot2->axisRect()->height();
+    if (w <= 0 || h <= 0) return;
+
+    // Y 轴步长 50，子刻度 8 根
+    const double yStep = 50;
+    const int ySubTickCount = 8;
+
+    auto yTicker = QSharedPointer<QCPAxisTickerFixedWithSubTicks>::create();
     yTicker->setTickStep(yStep);
+    yTicker->setSubTickCount(ySubTickCount);
     m_plot2->yAxis->setTicker(yTicker);
     m_plot2->yAxis2->setTicker(yTicker);
 
-    // X 轴步长按正方形公式计算后取整到 100 的倍数，刻度值全为 100 的整数倍
-    const double w = m_plot2->axisRect()->width();
-    const double h = m_plot2->axisRect()->height();
+    // X 轴：先算子刻度步长使网格呈正方形，再让主刻度步长为其整数倍
     const double xRange = m_plot2->xAxis->range().size();
-    const double rawStep = yStep * (h / w) * (xRange / yRange);
-    const double xStep = qMax(100.0, qRound(rawStep / 100.0) * 100.0);
+    const double ySubStep = yStep / (ySubTickCount + 1);
+    const double desiredXSubStep = ySubStep * (xRange / yRange) * (h / w);
+    const double xSubStep = qMax(100.0, qRound(desiredXSubStep / 100.0) * 100.0);
 
-    auto xTicker = QSharedPointer<QCPAxisTickerFixed>::create();
+    const double rawStep = yStep * (h / w) * (xRange / yRange);
+    const double xStep = qMax(xSubStep, qRound(rawStep / xSubStep) * xSubStep);
+    const int xSubTickCount = qBound(0, qRound(xStep / xSubStep) - 1, 20);
+
+    auto xTicker = QSharedPointer<QCPAxisTickerFixedWithSubTicks>::create();
     xTicker->setTickStep(xStep);
+    xTicker->setSubTickCount(xSubTickCount);
     m_plot2->xAxis->setTicker(xTicker);
     m_plot2->xAxis2->setTicker(xTicker);
+
+    m_plot2->replot();
 }
 
 /**

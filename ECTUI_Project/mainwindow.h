@@ -288,6 +288,7 @@ private:
     void connectToRemoteDevice();
     void updateDeviceConnectionStatusText();
     void updateParameterDisplay();
+    void updateProbeParameterDisplay(); // 用当前探头参数刷新顶部12个标签
     void updateCircleCurve();       // 更新圆形曲线
 
     void updateplot1_zerotickerLine(QCustomPlot* plot);

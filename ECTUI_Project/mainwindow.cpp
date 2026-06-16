@@ -189,6 +189,7 @@ void MainWindow::setupUI()
 
     // 更新参数显示
     updateParameterDisplay();
+    updateProbeParameterDisplay();
     updateDeviceConnectionStatusText();
 
     showMaximized();
@@ -1497,6 +1498,115 @@ void MainWindow::updateParameterDisplay()
     m_connectionStatusLabel->setText(tr("本机IP: %1 ").arg(ip));
 }
 
+/**
+ * @brief 用当前选中探头的实际参数刷新顶部 12 个参数标签
+ *
+ * 从 m_displayProbeIndex 对应的 Probe 读取激励频率/相位/幅度、
+ * 旋转角度、平衡点、滤波器配置、故障状态及最新数据点，
+ * 写入 m_drivingFreqLabel ~ m_shiftLabel 共 12 个标签。
+ * 若无有效探头则显示占位符 "--"。
+ */
+void MainWindow::updateProbeParameterDisplay()
+{
+    Probe *probe = nullptr;
+    if (m_displayProbeIndex >= 0 && m_displayProbeIndex < m_probeManager->probeCount()) {
+        probe = m_probeManager->probeAt(m_displayProbeIndex);
+    }
+
+    if (!probe) {
+        m_drivingFreqLabel->setText(tr("Driving Freq: --"));
+        m_refCurrentLabel->setText(tr("Ref Phase: --"));
+        m_driveCurrentLabel->setText(tr("Excitation Amp: --"));
+        m_rotationAngleLabel->setText(tr("Rotation Angle: --"));
+        m_alarmLabel->setText(tr("Alarm: --"));
+        m_realImaginaryLabel->setText(tr("Real: -- Imaginary: --"));
+        m_digFilterLabel->setText(tr("Dig Filter: --"));
+        m_shiftLabel->setText(tr("Shift X/Y: --"));
+        return;
+    }
+
+    // 1. Driving Freq (激励频率)
+    m_drivingFreqLabel->setText(tr("[P%1] Driving Freq: %2kHz")
+        .arg(m_displayProbeIndex + 1)
+        .arg(probe->excitationFreq() / 1000.0, 0, 'f', 3));
+
+    // 2. Ref Phase (激励相位)
+    m_refCurrentLabel->setText(tr("[P%1] Ref Phase: %2°")
+        .arg(m_displayProbeIndex + 1)
+        .arg(probe->excitationPhase()));
+
+    // 3. Excitation Amp (激励幅度)
+    m_driveCurrentLabel->setText(tr("[P%1] Excitation Amp: %2%")
+        .arg(m_displayProbeIndex + 1)
+        .arg(probe->excitationAmp()));
+
+    // 4. Rotation Angle
+    m_rotationAngleLabel->setText(tr("[P%1] Rotation Angle: %2dg")
+        .arg(m_displayProbeIndex + 1)
+        .arg(static_cast<double>(probe->rotationAngle()), 0, 'f', 1));
+
+    // 5. Acquisition Freq (系统采样率，非探头参数)
+    {
+        const SampleRate rate = m_deviceManager->curren tSampleRate();
+        QString rateText;
+        switch (rate) {
+        case SampleRate::SR_1K:   rateText = QStringLiteral("1kHz");   break;
+        case SampleRate::SR_50K:  rateText = QStringLiteral("50kHz");  break;
+        case SampleRate::SR_100K: rateText = QStringLiteral("100kHz"); break;
+        case SampleRate::SR_5M:   rateText = QStringLiteral("5MHz");   break;
+        case SampleRate::SR_25M:  rateText = QStringLiteral("25MHz");  break;
+        default:                  rateText = QStringLiteral("--");     break;
+        }
+        m_acquisitionFreqLabel->setText(tr("Acquisition Freq: %1").arg(rateText));
+    }
+
+    // 8. Alarm (故障状态)
+    m_alarmLabel->setText(tr("[P%1] Alarm: %2")
+        .arg(m_displayProbeIndex + 1)
+        .arg(probe->hasFault() ? tr("Fault") : tr("Normal")));
+
+    // 9. Real / Imaginary (最新数据点)
+    {
+        ProbeData *sd = probe->saveData();
+        if (sd && !sd->isEmpty()) {
+            const int last = sd->ampSize() - 1;
+            if (last >= 0) {
+                const auto &ampArr   = *sd->m_rawData_amp;
+                const auto &phaseArr = *sd->m_rawData_phase;
+                m_realImaginaryLabel->setText(tr("[P%1] Real:%2 Imag:%3")
+                    .arg(m_displayProbeIndex + 1)
+                    .arg(static_cast<double>(ampArr[last]), 0, 'f', 1)
+                    .arg(static_cast<double>(phaseArr[last]), 0, 'f', 1));
+            }
+        }
+    }
+
+    // 10. Digital Filter (滤波器配置)
+    {
+        QString filterText;
+        if (probe->filterLpEnabled())
+            filterText += tr("LP:%1Hz ").arg(probe->filterLpCutoffHz(), 0, 'f', 0);
+        if (probe->filterHpEnabled())
+            filterText += tr("HP:%1Hz ").arg(probe->filterHpCutoffHz(), 0, 'f', 0);
+        if (filterText.isEmpty())
+            filterText = tr("No Filter");
+        m_digFilterLabel->setText(tr("[P%1] Dig Filter: %2")
+            .arg(m_displayProbeIndex + 1)
+            .arg(filterText.trimmed()));
+    }
+
+    // 12. Shift X/Y (平衡点偏移)
+    if (probe->isBalanceSet()) {
+        m_shiftLabel->setText(tr("[P%1] Shift X/Y:%2/%3mV")
+            .arg(m_displayProbeIndex + 1)
+            .arg(static_cast<double>(probe->balanceAmp()), 0, 'f', 0)
+            .arg(static_cast<double>(probe->balancePhase()), 0, 'f', 0));
+    } else {
+        m_shiftLabel->setText(tr("[P%1] Shift X/Y:0/0mV")
+            .arg(m_displayProbeIndex + 1));
+    }
+}
+
 /** @brief 虚拟方向键「上」——菜单/参数导航（待实现） */
 void MainWindow::onVirtualUpClicked()
 {
@@ -1509,16 +1619,22 @@ void MainWindow::onVirtualDownClicked()
     // 实现向下操作逻辑
 }
 
-/** @brief 虚拟方向键「左」——菜单/参数导航（待实现） */
+/** @brief 虚拟方向键「左」——切换到上一个探头 */
 void MainWindow::onVirtualLeftClicked()
 {
-    // 实现向左操作逻辑
+    const int count = m_probeManager->probeCount();
+    if (count <= 0) return;
+    m_displayProbeIndex = (m_displayProbeIndex - 1 + count) % count;
+    updateProbeParameterDisplay();
 }
 
-/** @brief 虚拟方向键「右」——菜单/参数导航（待实现） */
+/** @brief 虚拟方向键「右」——切换到下一个探头 */
 void MainWindow::onVirtualRightClicked()
 {
-    // 实现向右操作逻辑
+    const int count = m_probeManager->probeCount();
+    if (count <= 0) return;
+    m_displayProbeIndex = (m_displayProbeIndex + 1) % count;
+    updateProbeParameterDisplay();
 }
 
 /** @brief 确认键——应用当前菜单选择（待实现） */
@@ -1543,6 +1659,7 @@ void MainWindow::onMoreParametersClicked()
 {
     ProbeConfigDialog dialog(m_probeManager, m_acquisitionThread, this);
     dialog.exec();
+    updateProbeParameterDisplay();
 }
 
 void MainWindow::onAutoZeroClicked()
@@ -1593,12 +1710,11 @@ void MainWindow::onAutoZeroClicked()
 
     probe->setBalancePoint(meanAmp, meanPhase);
 
-    m_rotationAngleLabel->setText(tr("Balance: %.1f, %.1f")
-        .arg(static_cast<double>(meanAmp))
-        .arg(static_cast<double>(meanPhase)));
-
     qDebug() << "[MainWindow] 探头" << (idx + 1)
              << "平衡点:" << meanAmp << meanPhase;
+
+    m_displayProbeIndex = idx;
+    updateProbeParameterDisplay();
 }
 
 void MainWindow::onRotationAngleClicked()
@@ -1634,10 +1750,11 @@ void MainWindow::onRotationAngleClicked()
 
     probe->setRotationAngle(static_cast<float>(angle));
 
-    m_rotationAngleLabel->setText(tr("Rotation Angle: %.1fdg").arg(angle));
-
     qDebug() << "[MainWindow] 探头" << (idx + 1)
              << "旋转角:" << angle;
+
+    m_displayProbeIndex = idx;
+    updateProbeParameterDisplay();
 }
 
 /**
@@ -2027,18 +2144,7 @@ void MainWindow::onLoadDataClicked()
     }
     probe->setRotationAngle(fileRotation);
 
-    // ── 5. 更新顶部参数显示标签 ──
-    if (fileHasBalance) {
-        m_rotationAngleLabel->setText(tr("Balance: %.1f, %.1f  Rot: %.1fdg")
-            .arg(static_cast<double>(fileBalanceAmp))
-            .arg(static_cast<double>(fileBalancePhase))
-            .arg(static_cast<double>(fileRotation)));
-    } else {
-        m_rotationAngleLabel->setText(tr("Rotation Angle: %.1fdg")
-            .arg(static_cast<double>(fileRotation)));
-    }
-
-    // ── 6. 预计算旋转三角函数（角度为 0 时跳过） ──
+    // ── 5. 预计算旋转三角函数（角度为 0 时跳过） ──
     const float balAmp   = fileHasBalance ? fileBalanceAmp : 0.0f;
     const float balPhase = fileHasBalance ? fileBalancePhase : 0.0f;
     const bool needRotate = std::fabs(fileRotation) > 1e-6f;
@@ -2100,6 +2206,9 @@ void MainWindow::onLoadDataClicked()
              << "探头:" << (probeIdx + 1)
              << "平衡点:" << balAmp << balPhase
              << "旋转:" << fileRotation;
+
+    m_displayProbeIndex = probeIdx;
+    updateProbeParameterDisplay();
 }
 
 // 由 QTimer 周期性调用，将当前选中探头的数据容器刷入绘图曲线
@@ -2107,6 +2216,25 @@ void MainWindow::refreshPlots()
 {
     if (m_displayProbeIndex < 0 || m_displayProbeIndex >= m_probeCurves.size())
         return;
+
+    // // 每帧刷新实时数据标签（Real / Imaginary）
+    // {
+    //     Probe *probe = m_probeManager->probeAt(m_displayProbeIndex);
+    //     if (probe) {
+    //         ProbeData *sd = probe->saveData();
+    //         if (sd && !sd->isEmpty()) {
+    //             const int last = sd->ampSize() - 1;
+    //             if (last >= 0) {
+    //                 const auto &ampArr   = *sd->m_rawData_amp;
+    //                 const auto &phaseArr = *sd->m_rawData_phase;
+    //                 m_realImaginaryLabel->setText(tr("[P%1] Real:%2 Imag:%3")
+    //                     .arg(m_displayProbeIndex + 1)
+    //                     .arg(static_cast<double>(ampArr[last]), 0, 'f', 1)
+    //                     .arg(static_cast<double>(phaseArr[last]), 0, 'f', 1));
+    //             }
+    //         }
+    //     }
+    // }
 
     const auto &c = m_probeCurves[m_displayProbeIndex];
     if (m_impedance_curve && c.impedance && !c.impedance->isEmpty())

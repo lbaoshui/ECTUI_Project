@@ -15,6 +15,7 @@
 #include <QTimer>
 
 #include <cmath>
+#include <memory>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -842,6 +843,9 @@ void MainWindow::setupConnections()
                     m_acquisitionPending = false;
                     startAcquisition();
                 }
+
+                // 连接成功后自动询问开发板信息
+                m_deviceManager->queryBoardInfo();
             });
 
     connect(m_deviceManager,
@@ -877,6 +881,10 @@ void MainWindow::setupConnections()
                     m_acquisitionPending = false;
                 }
             });
+
+    // ── 开发板信息回应（暂由连接对话框中按钮自行处理） ─────
+    // connect(m_deviceManager, &DeviceManager::boardInfoReceived,
+    //         this, &MainWindow::onBoardInfoReceived);
 
     // ── 加载/保存探头配置文件 ──────────────────
     connect(m_stackLoadConfigBtn, &QPushButton::clicked, this, [this]() {
@@ -1412,13 +1420,17 @@ void MainWindow::connectToRemoteDevice()
     buttonRowLayout->addStretch();
 
     QPushButton *connectButton = new QPushButton(tr("连接设备"), &dialog);
+    QPushButton *queryBoardBtn = new QPushButton(tr("查询开发板"), &dialog);
     QPushButton *cancelButton = new QPushButton(tr("取消"), &dialog);
     connectButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
+    queryBoardBtn->setMinimumSize(kButtonMinWidth, kButtonHeight);
     cancelButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
     connectButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    queryBoardBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     cancelButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     buttonRowLayout->addWidget(connectButton);
+    buttonRowLayout->addWidget(queryBoardBtn);
     buttonRowLayout->addWidget(cancelButton);
 
     connect(connectButton,
@@ -1435,6 +1447,49 @@ void MainWindow::connectToRemoteDevice()
 
                 dialog.accept();
             });
+
+    // 查询开发板信息按钮：发送询问命令，收到回应后弹窗展示
+    connect(queryBoardBtn, &QPushButton::clicked, &dialog, [this, &dialog]() {
+        if (m_deviceManager->connectionState() != ConnectionState::Connected) {
+            QMessageBox::information(&dialog, tr("提示"),
+                tr("请先连接设备后再查询开发板信息。"));
+            return;
+        }
+
+        // 一次性连接：收到一次回应后自动断开，避免重复弹窗
+        auto active = std::make_shared<bool>(true);
+        connect(m_deviceManager, &DeviceManager::boardInfoReceived,
+                &dialog, [&dialog, active](BoardInfo info) {
+            if (!*active)
+                return;
+            *active = false;
+
+            if (!info.valid) {
+                QMessageBox::warning(&dialog, tr("查询失败"),
+                    tr("未收到有效的开发板信息回应。"));
+                return;
+            }
+
+            const QString msg = QObject::tr(
+                "MAC 地址: %1\n"
+                "IP 地址: %2\n"
+                "数据格式: %3\n"
+                "有效位数: %4 bit\n"
+                "采样率: %5 Hz\n"
+                "每包字节数: %6")
+                .arg(info.macAddress)
+                .arg(info.ipAddress)
+                .arg(info.signedData ? QObject::tr("有符号") : QObject::tr("无符号"))
+                .arg(info.dataBits)
+                .arg(info.sampleRateHz)
+                .arg(info.bytesPerSend);
+
+            QMessageBox::information(&dialog, QObject::tr("开发板信息"), msg);
+        });
+
+        m_deviceManager->queryBoardInfo();
+    });
+
     connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
 
     layout->addWidget(promptLabel);
@@ -2328,6 +2383,22 @@ void MainWindow::syncProbeCurves()
     // 若当前显示索引越界，回退到 0
     if (m_displayProbeIndex >= newCount)
         m_displayProbeIndex = 0;
+}
+
+void MainWindow::onBoardInfoReceived(BoardInfo info)
+{
+    if (!info.valid)
+        return;
+
+    // 用开发板返回的 IP 更新存储的地址，
+    // 下次打开连接对话框时 ipEdit 会自动显示正确的 IP。
+    if (!info.ipAddress.isEmpty() && info.ipAddress != QStringLiteral("0.0.0.0")) {
+        // m_deviceHost = info.ipAddress;  // 暂不自动填写，由用户手动确认
+        qDebug() << "[MainWindow] 开发板信息 | IP:" << info.ipAddress
+                 << "MAC:" << info.macAddress
+                 << "采样率:" << info.sampleRateHz << "Hz"
+                 << "数据位数:" << info.dataBits;
+    }
 }
 
 void MainWindow::onStartAcquisitionBtnClicked()

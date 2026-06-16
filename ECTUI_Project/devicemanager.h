@@ -102,6 +102,21 @@ struct RawAdcChannelPacket {
     QVector<double> voltageMv;
 };
 
+/**
+ * @brief 询问开发板信息回应数据
+ *
+ * 对应命令 0xAA55AA10，回应 24 字节固定长度。
+ */
+struct BoardInfo {
+    bool     valid        = false;
+    QString  macAddress;        // MAC 地址（6 字节，格式 XX:XX:XX:XX:XX:XX）
+    QString  ipAddress;         // 板卡 IPv4 地址
+    bool     signedData   = false;  // 0x00=无符号，0x01=有符号
+    int      dataBits     = 12;     // 每通道有效数据位数，默认 12
+    quint32  sampleRateHz = 0;      // 当前采样率，单位 Hz
+    quint32  bytesPerSend = 0;      // 每次发送数据字节数
+};
+
 // 让自定义数据类型可以通过 Qt 信号槽跨线程/排队连接传递。
 // 后续若 MainWindow 与 DeviceManager 不在同一线程，adcDataReady 仍可正常工作。
 Q_DECLARE_METATYPE(AdcChannelData)
@@ -114,6 +129,7 @@ Q_DECLARE_METATYPE(QVector<AdcChannelData>)
 // Q_DECLARE_METATYPE(QVector<RawAdcChannelData>)
 Q_DECLARE_METATYPE(LockinChannelPacket)
 Q_DECLARE_METATYPE(RawAdcChannelPacket)
+Q_DECLARE_METATYPE(BoardInfo)
 
 // ─────────────────────────────────────────────
 //  枚举
@@ -243,6 +259,16 @@ public:
      */
     bool sendStopAcquisition();
 
+    // ── 开发板信息询问 ──────────────────────────
+    /**
+     * @brief 发送询问开发板信息命令（0xAA55AA10）
+     *
+     * 下位机收到后回应 24 字节固定包，包含 MAC、IP、采样率等信息。
+     * 解析成功后通过 boardInfoReceived 信号发出。
+     */
+    bool queryBoardInfo();
+    BoardInfo lastBoardInfo() const { return m_lastBoardInfo; }
+
     // ── 数据读取 ──────────────────────────────
     /** @brief 获取最近一帧解析好的 ADC 数据（线程安全） */
     // QVector<AdcChannelData> getAdcData() const;
@@ -295,6 +321,9 @@ signals:
     /** AD7768 新协议：某个通道的原始 ADC 数据已推入缓冲池 */
     void rawAdcChannelDataReady(int channel, quint32 packetIndex);
 
+    /** 收到开发板信息回应 */
+    void boardInfoReceived(BoardInfo info);
+
 private slots:
     // socket 状态变化统一收敛到这些槽中，避免 MainWindow 直接操作底层 QTcpSocket。
     void onConnected();
@@ -342,6 +371,10 @@ private:
     void checkPacketIndex_New(quint32 packetIndex);
     void resetStreamingState();
 
+    // ── 开发板信息回应解析 ─────────────────────
+    void checkAndParseBoardInfoResponse();          // 从 m_receiveBuffer 中扫描并解析回应包
+    bool parseBoardInfoResponse(const QByteArray &data);
+
     // ── Vpp 计算辅助 ──────────────────────────
     // 对单通道 512 点数据计算 Vpp。
     // 这里沿用 Python 版策略：取最大 5 点均值减最小 5 点均值，降低尖峰噪声影响。
@@ -355,6 +388,7 @@ private:
     QByteArray        m_receiveBuffer;    // TCP 粘包/半包缓冲
     bool              m_hasLastNewPacketIndex = false;
     quint32           m_lastNewPacketIndex = 0;
+    BoardInfo         m_lastBoardInfo;
 
     // m_adcData 由 readyRead 回调写入，也可能被 UI 或算法线程读取，因此加锁保护。
     // mutable QMutex    m_dataMutex;
@@ -379,6 +413,11 @@ private:
     static constexpr quint32 CMD_SET_FWORD   = 0xAA55FFD2;  // 设置 DDS fword
     static constexpr quint32 CMD_SET_PHASE   = 0xAA55FFD3;  // 设置 DDS phase
     static constexpr quint32 CMD_SET_FREQ_HZ = 0xAA55FFD4;  // 设置 DDS 频率 Hz
+
+    // 开发板信息询问
+    static constexpr quint32 CMD_QUERY_BOARD_INFO     = 0xAA55AA10;  // 询问开发板信息
+    static constexpr int     BOARD_INFO_RESPONSE_SIZE = 24;          // 回应包字节数
+    static const QByteArray  BOARD_INFO_RESPONSE_HEADER;             // 回应包头 LE 字节
 };
 
 #endif // DEVICEMANAGER_H

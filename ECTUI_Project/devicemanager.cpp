@@ -60,6 +60,8 @@ const QByteArray DeviceManager::ADC_DATA_HEADER =
     QByteArray::fromHex("33dd33dd");                      // 数据包标志
 const QByteArray DeviceManager::ADC_DATA_LEN_TAG =
     QByteArray::fromHex("40400000");                      // 旧版数据包长度：16384个byte
+const QByteArray DeviceManager::BOARD_INFO_RESPONSE_HEADER =
+    QByteArray::fromHex("10aa55aa");                      // 0xAA55AA10 LE 字节序
 
 // 构造函数
 DeviceManager::DeviceManager(QObject *parent)
@@ -87,6 +89,7 @@ DeviceManager::DeviceManager(QObject *parent)
     // qRegisterMetaType<QVector<RawAdcChannelData>>("QVector<RawAdcChannelData>");
     qRegisterMetaType<LockinChannelPacket>("LockinChannelPacket");
     qRegisterMetaType<RawAdcChannelPacket>("RawAdcChannelPacket");
+    qRegisterMetaType<BoardInfo>("BoardInfo");
 
     // 为每个 AD7768 通道预分配独立无锁缓冲池。
     m_lockinBuffers.reserve(AD7768_CHANNELS);
@@ -359,6 +362,27 @@ bool DeviceManager::sendStopAcquisition()
 }
 
 // ─────────────────────────────────────────────
+// 开发板信息询问
+
+// 发送询问开发板信息命令（0xAA55AA10，4 字节）。
+// 下位机收到后回应 24 字节固定包，在 onDataReceived_New 中拦截解析。
+bool DeviceManager::queryBoardInfo()
+{
+    if (m_connState != ConnectionState::Connected) {
+        emit errorOccurred(QStringLiteral("设备未连接，无法询问开发板信息。"));
+        return false;
+    }
+
+    const QByteArray frame = buildNewAcqCmd(CMD_QUERY_BOARD_INFO);
+    const qint64 written = m_socket->write(frame);
+    if (written != frame.size()) {
+        emit errorOccurred(QStringLiteral("询问开发板信息命令发送失败。"));
+        return false;
+    }
+    return m_socket->waitForBytesWritten(1000);
+}
+
+// ─────────────────────────────────────────────
 // 旧协议 AD 控制
 
 // 发送采样率配置
@@ -555,6 +579,9 @@ void DeviceManager::onDataReceived_New()
     // 因为 readAll() 不保证刚好等于一个完整 AD7768 数据包。
     m_receiveBuffer.append(m_socket->readAll());
 
+    // 先检查是否有开发板信息回应包，独立于 AD7768 数据流解析。
+    checkAndParseBoardInfoResponse();
+
     // 一次 readyRead 里可能已经收到了多个完整包，所以这里持续尝试解析。
     // 直到缓存中找不到包头，或者只剩下一个未收完整的包，才退出等待下一次 readyRead。
     while (true) {
@@ -732,6 +759,78 @@ void DeviceManager::checkPacketIndex_New(quint32 packetIndex)
 
     m_hasLastNewPacketIndex = true;
     m_lastNewPacketIndex = packetIndex;
+}
+
+// 从 m_receiveBuffer 中扫描开发板信息回应头（0xAA55AA10），
+// 找到完整 24 字节后调用 parseBoardInfoResponse 解析。
+// 解析成功后移除已消费数据；解析失败则滑动 1 字节重试。
+void DeviceManager::checkAndParseBoardInfoResponse()
+{
+    while (m_receiveBuffer.size() >= BOARD_INFO_RESPONSE_SIZE) {
+        const int infoPos = m_receiveBuffer.indexOf(BOARD_INFO_RESPONSE_HEADER);
+        if (infoPos < 0)
+            break;
+
+        if (infoPos > 0) {
+            m_receiveBuffer.remove(0, infoPos);
+        }
+
+        if (m_receiveBuffer.size() < BOARD_INFO_RESPONSE_SIZE) {
+            break;  // 包头已找到但数据未收全，等下一次 readyRead
+        }
+
+        if (!parseBoardInfoResponse(m_receiveBuffer.left(BOARD_INFO_RESPONSE_SIZE))) {
+            m_receiveBuffer.remove(0, 1);  // 解析失败，滑动 1 字节重试
+            continue;
+        }
+
+        m_receiveBuffer.remove(0, BOARD_INFO_RESPONSE_SIZE);  // 解析成功，移除已消费数据
+    }
+}
+
+// 解析开发板信息回应包（24 字节固定长度）。
+// 格式依据设计需求 §三.2-1：
+//   [0:4)   CMD (0xAA55AA10)
+//   [4:10)  MAC 地址 (6 字节)
+//   [10:14) IP 地址 (4 字节)
+//   [14]    符号位 (0x00=无符号, 0x01=有符号)
+//   [15]    每通道有效数据位数 (默认 0x0B=12bit)
+//   [16:20) 当前采样率 (uint32 LE, Hz)
+//   [20:24) 每次发送数据字节数 (uint32 LE)
+bool DeviceManager::parseBoardInfoResponse(const QByteArray &data)
+{
+    if (data.size() < BOARD_INFO_RESPONSE_SIZE)
+        return false;
+
+    const char *raw = data.constData();
+    const quint32 cmd = readUInt32LE(raw);
+    if (cmd != CMD_QUERY_BOARD_INFO)
+        return false;
+
+    BoardInfo info;
+    info.valid = true;
+
+    // MAC 地址：6 字节，格式 XX:XX:XX:XX:XX:XX
+    info.macAddress = QString::asprintf("%02X:%02X:%02X:%02X:%02X:%02X",
+        static_cast<uchar>(raw[4]),  static_cast<uchar>(raw[5]),
+        static_cast<uchar>(raw[6]),  static_cast<uchar>(raw[7]),
+        static_cast<uchar>(raw[8]),  static_cast<uchar>(raw[9]));
+
+    // IP 地址：4 字节，大端序 IPv4
+    info.ipAddress = QStringLiteral("%1.%2.%3.%4")
+        .arg(static_cast<uchar>(raw[10]))
+        .arg(static_cast<uchar>(raw[11]))
+        .arg(static_cast<uchar>(raw[12]))
+        .arg(static_cast<uchar>(raw[13]));
+
+    info.signedData   = (static_cast<uchar>(raw[14]) != 0x00);
+    info.dataBits     = static_cast<uchar>(raw[15]);
+    info.sampleRateHz = readUInt32LE(raw + 16);
+    info.bytesPerSend = readUInt32LE(raw + 20);
+
+    m_lastBoardInfo = info;
+    emit boardInfoReceived(info);
+    return true;
 }
 
 void DeviceManager::resetStreamingState()

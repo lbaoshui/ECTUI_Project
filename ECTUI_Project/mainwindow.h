@@ -87,6 +87,9 @@ private slots:
     // 开始采集（含定时器启动）
     void startAcquisition();
 
+    // 收到开发板信息回应
+    void onBoardInfoReceived(BoardInfo info);
+
 private:
     Ui::MainWindow *ui;
 

@@ -367,6 +367,7 @@ bool DeviceManager::sendSampleRateConfig(SampleRate rate)
     // 采样率被收敛为枚举，避免外部传入协议不支持的值。
     if (m_connState != ConnectionState::Connected) {
         emit errorOccurred(QStringLiteral("设备未连接，无法发送采样率配置。"));
+        qDebug() << "设备未连接，无法发送采样率配置。";
         return false;
     }
 

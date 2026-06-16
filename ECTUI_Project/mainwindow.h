@@ -65,6 +65,9 @@ private slots:
     // 探头参数配置对话框
     void onMoreParametersClicked();
 
+    // 采样率设置
+    void onSetSampleRateClicked();
+
     // 平衡点（自动清零）与旋转角度
     void onAutoZeroClicked();
     void onRotationAngleClicked();

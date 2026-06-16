@@ -802,6 +802,12 @@ void MainWindow::setupConnections()
     // 底部Tab切换连接
     connect(m_bottomTabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
 
+    // 采样率设置按钮
+    // connect(m_setSampleRateBtn, &QPushButton::clicked,
+    //         this, &MainWindow::onSetSampleRateClicked);
+    connect(m_stackSetSampleRateBtn, &QPushButton::clicked,
+            this, &MainWindow::onSetSampleRateClicked);
+
     // 探头参数配置按钮
     connect(m_stackMoreParametersBtn, &QPushButton::clicked,
             this, &MainWindow::onMoreParametersClicked);
@@ -845,6 +851,7 @@ void MainWindow::setupConnections()
                 updateDeviceConnectionStatusText();
 
                 if (m_deviceConnectionPending) {
+                    // 用户主动连接失败 → 弹窗告知
                     m_deviceConnectionPending = false;
                     QMessageBox::warning(this,
                                          tr("连接设备失败"),
@@ -852,6 +859,17 @@ void MainWindow::setupConnections()
                                              .arg(m_deviceHost)
                                              .arg(m_devicePort)
                                              .arg(message));
+                } else {
+                    // 非主动连接场景（如采集过程中连接意外断开）
+                    qWarning() << "[DeviceManager] 错误:" << message;
+
+                    // 如果正在采集，自动停止
+                    if (m_acquisitionThread->isAcquiring()) {
+                        m_acquisitionThread->stop();
+                        m_plotRefreshTimer->stop();
+                        m_saveManager->onAcquisitionStopped();
+                        m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
+                    }
                 }
 
                 // 因采集触发的连接失败 → 清除标志，不开始采集
@@ -1626,6 +1644,48 @@ void MainWindow::onCancelClicked()
  * 弹出 ProbeConfigDialog，用户可设置探头数量、各通道硬件映射、
  * 激励频率/相位/幅度及启用状态；确认后自动同步到 ProbeManager。
  */
+void MainWindow::onSetSampleRateClicked()
+{
+    // 未连接时提示用户先连接设备
+    if (m_deviceManager->connectionState() != ConnectionState::Connected) {
+        QMessageBox::information(this, tr("设备未连接"),
+            tr("请先连接下位机设备后再设置采样率。"));
+        return;
+    }
+
+    // 采样率选项（所有通道统一使用同一采样率）
+    const QStringList rateNames = {
+        QStringLiteral("1 kHz"), QStringLiteral("50 kHz"), QStringLiteral("100 kHz"),
+        QStringLiteral("5 MHz"), QStringLiteral("25 MHz")
+    };
+    const QVector<SampleRate> rateValues = {
+        SampleRate::SR_1K, SampleRate::SR_50K, SampleRate::SR_100K,
+        SampleRate::SR_5M, SampleRate::SR_25M
+    };
+
+    // 当前采样率作为默认选中项
+    const SampleRate current = m_deviceManager->currentSampleRate();
+    int defaultIndex = 2;  // 默认 100kHz
+    for (int i = 0; i < rateValues.size(); ++i) {
+        if (rateValues[i] == current) {
+            defaultIndex = i;
+            break;
+        }
+    }
+
+    bool ok = false;
+    const QString selected = QInputDialog::getItem(this, tr("设置采样率"),
+        tr("选择 ADC 采样率（所有通道统一）："), rateNames, defaultIndex, false, &ok);
+    if (!ok || selected.isEmpty())
+        return;
+
+    const int idx = rateNames.indexOf(selected);
+    if (idx < 0 || idx >= rateValues.size())
+        return;
+
+    m_deviceManager->sendSampleRateConfig(rateValues[idx]);
+}
+
 void MainWindow::onMoreParametersClicked()
 {
     ProbeConfigDialog dialog(m_probeManager, m_acquisitionThread, this);

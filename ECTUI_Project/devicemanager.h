@@ -12,6 +12,7 @@
 #include "framebuffer.h"
 
 #include <QObject>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QByteArray>
 #include <QVector>
@@ -179,16 +180,16 @@ public:
 
     // ── 连接管理 ──────────────────────────────
     /**
-     * @brief 连接到下位机 TCP 服务端
-     * @param host 下位机 IP 地址
-     * @param port 下位机端口，默认 8899，可按实际协议修改
+     * @brief 启动 TCP 服务端，等待下位机连接
+     * @param port 本机监听端口，默认 8899
      *
-     * 该接口只负责发起异步连接，不阻塞 UI。
-     * 真实连接结果通过 onConnected/onSocketError 回调，并转成信号通知界面层。
+     * 下位机作为 TCP 客户端主动连接本机，本机作为服务端被动接受。
+     * 监听结果通过 connectionStateChanged / errorOccurred 信号通知界面层。
      */
-    void connectToDevice(const QString &host, quint16 port = 8899);
-    void disconnectFromDevice();
+    void startListening(quint16 port = 8899);
+    void stopListening();
     ConnectionState connectionState() const { return m_connState; }
+    bool isListening() const;
 
     // ── DA 配置（旧协议）─────────────────────
     /**
@@ -326,8 +327,8 @@ signals:
 
 private slots:
     // socket 状态变化统一收敛到这些槽中，避免 MainWindow 直接操作底层 QTcpSocket。
-    void onConnected();
-    void onDisconnected();
+    void onNewConnection();
+    void onClientDisconnected();
     void onSocketError(QAbstractSocket::SocketError error);
     // void onDataReceived();
     void onDataReceived_New();
@@ -381,8 +382,8 @@ private:
     float computeChannelVpp(const QVector<quint32> &samples) const;
 
     // ── 成员 ──────────────────────────────────
-    // 唯一的底层通信对象，DeviceManager 对外隐藏 socket 细节。
-    QTcpSocket       *m_socket;
+    QTcpServer       *m_server;   // TCP 服务端，监听下位机连接
+    QTcpSocket       *m_socket;   // 与下位机的通信 socket（accept 后获得）
     ConnectionState   m_connState;
     SampleRate        m_currentSampleRate = SampleRate::SR_100K;
     QByteArray        m_receiveBuffer;    // TCP 粘包/半包缓冲

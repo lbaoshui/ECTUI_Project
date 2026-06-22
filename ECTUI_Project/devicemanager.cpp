@@ -66,7 +66,8 @@ const QByteArray DeviceManager::BOARD_INFO_RESPONSE_HEADER =
 // 构造函数
 DeviceManager::DeviceManager(QObject *parent)
     : QObject(parent),
-      m_socket(new QTcpSocket(this)),
+      m_server(new QTcpServer(this)),
+      m_socket(nullptr),
       m_connState(ConnectionState::Disconnected)
     //   m_adcData(ADC_CHANNELS)
 {
@@ -101,66 +102,54 @@ DeviceManager::DeviceManager(QObject *parent)
             std::make_unique<SpscFrameBuffer<RawAdcChannelPacket>>(RAW_ADC_BUFFER_CAPACITY));
     }
 
-    // 统一在 DeviceManager 内部处理 socket 生命周期与事件分发。  
-    connect(m_socket, &QTcpSocket::connected, this, &DeviceManager::onConnected);           // socket连接成功，更新标志位 
-    connect(m_socket, &QTcpSocket::disconnected, this, &DeviceManager::onDisconnected);
-    // connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived);
-    connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived_New);    // 新版数据接收解析方式
-
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
-    connect(m_socket, &QTcpSocket::errorOccurred, this, &DeviceManager::onSocketError);
-#else
-    connect(m_socket,
-            QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::error),
-            this,
-            &DeviceManager::onSocketError);
-#endif
+    connect(m_server, &QTcpServer::newConnection, this, &DeviceManager::onNewConnection);
 }
 
 DeviceManager::~DeviceManager()
 {
-    disconnectFromDevice();
+    stopListening();
 }
 
-// 连接到设备
-void DeviceManager::connectToDevice(const QString &host, quint16 port)
+// 启动 TCP 服务端，等待下位机连接
+void DeviceManager::startListening(quint16 port)
 {
-    // 已经处于有效连接时直接返回，避免重复 connectToHost。
-    if (m_connState == ConnectionState::Connected &&
-        m_socket->state() == QAbstractSocket::ConnectedState) {
+    if (m_server->isListening() && m_server->serverPort() == port) {
         return;
     }
 
-    // 每次重新连接前清空旧接收缓冲，避免把上一次残留数据误判为新帧。
-    resetStreamingState();
+    stopListening();
+
     m_connState = ConnectionState::Connecting;
     emit connectionStateChanged(m_connState);
 
-    // abort() 会立刻终止旧连接/旧连接尝试，适合“重新连接”场景。
-    m_socket->abort();
-    m_socket->connectToHost(host, port);
+    if (!m_server->listen(QHostAddress::Any, port)) {
+        m_connState = ConnectionState::Disconnected;
+        emit connectionStateChanged(m_connState);
+        emit errorOccurred(QStringLiteral("TCP 服务端启动失败: %1").arg(m_server->errorString()));
+    }
 }
 
-// 断开与设备连接
-void DeviceManager::disconnectFromDevice()
+bool DeviceManager::isListening() const
 {
-    // 主动断开时也清掉缓冲，防止下次连接误用旧字节流。
+    return m_server->isListening();
+}
+
+// 停止监听并断开已有客户端连接
+void DeviceManager::stopListening()
+{
     resetStreamingState();
 
-    if (m_socket->state() == QAbstractSocket::UnconnectedState) {
-        if (m_connState != ConnectionState::Disconnected) {
-            m_connState = ConnectionState::Disconnected;
-            emit connectionStateChanged(m_connState);
+    if (m_socket) {
+        m_socket->disconnectFromHost();
+        if (m_socket->state() != QAbstractSocket::UnconnectedState) {
+            m_socket->waitForDisconnected(1000);
         }
-        return;
+        m_socket->deleteLater();
+        m_socket = nullptr;
     }
 
-    m_socket->disconnectFromHost();
-    if (m_socket->state() != QAbstractSocket::UnconnectedState) {
-        m_socket->waitForDisconnected(1000);
-    }
+    m_server->close();
 
-    // 同步更新状态，调用方无需等待异步 onDisconnected 回调
     if (m_connState != ConnectionState::Disconnected) {
         m_connState = ConnectionState::Disconnected;
         emit connectionStateChanged(m_connState);
@@ -495,33 +484,78 @@ QVector<float> DeviceManager::calcSensitivity(const QVector<float> &baseline) co
 }
 */
 
-// socket连接成功，更新标志位 
-void DeviceManager::onConnected()
+// QTcpServer 收到新连接，接受下位机 socket
+void DeviceManager::onNewConnection()
 {
-    // 只维护状态并发信号，把 UI 表现留给上层。
-    m_connState = ConnectionState::Connected;
-    emit connectionStateChanged(m_connState);
-}
+    while (m_server->hasPendingConnections()) {
+        QTcpSocket *clientSocket = m_server->nextPendingConnection();
+        if (!clientSocket)
+            continue;
 
-// socket连接断开，更新标志位 
-void DeviceManager::onDisconnected()
-{
-    resetStreamingState();
-    if (m_connState != ConnectionState::Disconnected) {
-        m_connState = ConnectionState::Disconnected;
+        // 如果已有连接，拒绝新的（单客户端模式）
+        if (m_socket) {
+            clientSocket->disconnectFromHost();
+            clientSocket->deleteLater();
+            emit errorOccurred(QStringLiteral("已有下位机连接，拒绝新的连接请求。"));
+            continue;
+        }
+
+        m_socket = clientSocket;
+        connect(m_socket, &QTcpSocket::disconnected, this, &DeviceManager::onClientDisconnected);
+        connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived_New);
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+        connect(m_socket, &QTcpSocket::errorOccurred, this, &DeviceManager::onSocketError);
+#else
+        connect(m_socket,
+                QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::error),
+                this,
+                &DeviceManager::onSocketError);
+#endif
+
+        m_connState = ConnectionState::Connected;
         emit connectionStateChanged(m_connState);
     }
 }
 
-// socket错误，更新标志位 
+// 客户端 socket 断开
+void DeviceManager::onClientDisconnected()
+{
+    resetStreamingState();
+    if (m_socket) {
+        m_socket->deleteLater();
+        m_socket = nullptr;
+    }
+    // 服务端若仍在监听则回到等待连接状态，否则标记为断开
+    if (m_server->isListening()) {
+        if (m_connState != ConnectionState::Connecting) {
+            m_connState = ConnectionState::Connecting;
+            emit connectionStateChanged(m_connState);
+        }
+    } else {
+        if (m_connState != ConnectionState::Disconnected) {
+            m_connState = ConnectionState::Disconnected;
+            emit connectionStateChanged(m_connState);
+        }
+    }
+}
+
+// socket错误，更新标志位
 void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
-    // 一旦 socket 出错，统一回到断开态，避免上层继续认为连接可用。
     resetStreamingState();
-    m_connState = ConnectionState::Disconnected;
+    if (m_socket) {
+        emit errorOccurred(m_socket->errorString());
+        m_socket->deleteLater();
+        m_socket = nullptr;
+    }
+    if (m_server->isListening()) {
+        m_connState = ConnectionState::Connecting;
+    } else {
+        m_connState = ConnectionState::Disconnected;
+    }
     emit connectionStateChanged(m_connState);
-    emit errorOccurred(m_socket->errorString());
 }
 
 /*

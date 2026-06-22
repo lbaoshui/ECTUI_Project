@@ -828,13 +828,12 @@ void MainWindow::setupConnections()
                 if (state != ConnectionState::Connected)
                     return;
 
-                // 手动连接设备提示
+                // 下位机已连接提示
                 if (m_deviceConnectionPending) {
                     m_deviceConnectionPending = false;
                     QMessageBox::information(this,
                                              tr("连接设备成功"),
-                                             tr("已成功连接到下位机 %1:%2。")
-                                                 .arg(m_deviceHost)
+                                             tr("下位机已连接到本机端口 %1。")
                                                  .arg(m_devicePort));
                 }
 
@@ -855,12 +854,11 @@ void MainWindow::setupConnections()
                 updateDeviceConnectionStatusText();
 
                 if (m_deviceConnectionPending) {
-                    // 用户主动连接失败 → 弹窗告知
+                    // 监听启动失败或下位机连接异常
                     m_deviceConnectionPending = false;
                     QMessageBox::warning(this,
                                          tr("连接设备失败"),
-                                         tr("连接到下位机 %1:%2 失败：\n%3")
-                                             .arg(m_deviceHost)
+                                         tr("监听端口 %1 失败：\n%2")
                                              .arg(m_devicePort)
                                              .arg(message));
                 } else {
@@ -1325,17 +1323,17 @@ void MainWindow::chooseLocalInterfaceIp()
 }
 
 /**
- * @brief 弹出对话框输入下位机 IP/端口并发起 TCP 连接
+ * @brief 弹出对话框输入监听端口并启动 TCP 服务端
  *
- * 校验 IP 格式后调用 DeviceManager::connectToDevice；连接结果通过
- * connectionStateChanged / errorOccurred 回调并弹出提示框。
+ * 本机作为 TCP Server 监听指定端口，等待下位机主动连接。
+ * 连接结果通过 connectionStateChanged / errorOccurred 回调并弹出提示框。
  */
 void MainWindow::connectToRemoteDevice()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("连接下位机设备"));
-    dialog.setMinimumSize(400, 160);
-    dialog.resize(400, 200);
+    dialog.setWindowTitle(tr("启动监听服务"));
+    dialog.setMinimumSize(400, 140);
+    dialog.resize(400, 170);
 
     constexpr int kFieldHeight = 32;
     constexpr int kFieldMinWidth = 200;
@@ -1345,10 +1343,6 @@ void MainWindow::connectToRemoteDevice()
     dialog.setStyleSheet(
         "QDialog { background-color: #1e1e1e; }"
         "QLabel { color: #cccccc; font-size: 13px; background: transparent; border: none; }"
-        "QLineEdit {"
-        "    background-color: #2d2d30; color: #ffffff; border: 1px solid #3c3c3c;"
-        "    border-radius: 3px; padding: 4px 8px; font-size: 13px;"
-        "}"
         "QSpinBox {"
         "    background-color: #2d2d30; color: #ffffff; border: 1px solid #3c3c3c;"
         "    border-radius: 3px; padding-left: 8px; padding-right: 22px; font-size: 13px;"
@@ -1364,12 +1358,6 @@ void MainWindow::connectToRemoteDevice()
         "    border-left: 1px solid #555; border-bottom-right-radius: 2px;"
         "}"
         "QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: #0e639c; }"
-        "QSpinBox::up-arrow {"
-        "    width: 8px; height: 8px;"
-        "}"
-        "QSpinBox::down-arrow {"
-        "    width: 8px; height: 8px;"
-        "}"
         "QPushButton {"
         "    background-color: #0e639c; color: white; border: 1px solid #3c3c3c;"
         "    border-radius: 3px; padding: 6px 14px; font-size: 13px; font-weight: bold;"
@@ -1382,7 +1370,7 @@ void MainWindow::connectToRemoteDevice()
     layout->setContentsMargins(20, 16, 20, 16);
     layout->setSpacing(12);
 
-    QLabel *promptLabel = new QLabel(tr("请输入下位机的 IP Address 和 Port："), &dialog);
+    QLabel *promptLabel = new QLabel(tr("请输入本机监听端口，等待下位机连接："), &dialog);
     promptLabel->setWordWrap(true);
 
     QFormLayout *formLayout = new QFormLayout();
@@ -1393,14 +1381,7 @@ void MainWindow::connectToRemoteDevice()
     formLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     formLayout->setFormAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
-    QLineEdit *ipEdit = new QLineEdit(&dialog);
     QSpinBox *portSpinBox = new QSpinBox(&dialog);
-
-    ipEdit->setPlaceholderText(QStringLiteral("192.168.1.10"));
-    ipEdit->setText(m_deviceHost);
-    ipEdit->setMinimumHeight(kFieldHeight);
-    ipEdit->setMinimumWidth(kFieldMinWidth);
-    ipEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     portSpinBox->setRange(1, 65535);
     portSpinBox->setValue(m_devicePort);
@@ -1412,45 +1393,29 @@ void MainWindow::connectToRemoteDevice()
     portSpinBox->setMinimumWidth(kFieldMinWidth);
     portSpinBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    QLabel *ipLabel = new QLabel(tr("IP Address:"), &dialog);
-    QLabel *portLabel = new QLabel(tr("Port:"), &dialog);
-    ipLabel->setMinimumWidth(88);
+    QLabel *portLabel = new QLabel(tr("监听端口:"), &dialog);
     portLabel->setMinimumWidth(88);
-    formLayout->addRow(ipLabel, ipEdit);
     formLayout->addRow(portLabel, portSpinBox);
 
     QHBoxLayout *buttonRowLayout = new QHBoxLayout();
     buttonRowLayout->setSpacing(12);
     buttonRowLayout->addStretch();
 
-    QPushButton *connectButton = new QPushButton(tr("连接设备"), &dialog);
+    QPushButton *startBtn = new QPushButton(tr("启动监听"), &dialog);
     QPushButton *queryBoardBtn = new QPushButton(tr("查询开发板"), &dialog);
     QPushButton *cancelButton = new QPushButton(tr("取消"), &dialog);
-    connectButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
+    startBtn->setMinimumSize(kButtonMinWidth, kButtonHeight);
     queryBoardBtn->setMinimumSize(kButtonMinWidth, kButtonHeight);
     cancelButton->setMinimumSize(kButtonMinWidth, kButtonHeight);
-    connectButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    startBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     queryBoardBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     cancelButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    buttonRowLayout->addWidget(connectButton);
+    buttonRowLayout->addWidget(startBtn);
     buttonRowLayout->addWidget(queryBoardBtn);
     buttonRowLayout->addWidget(cancelButton);
 
-    connect(connectButton,
-            &QPushButton::clicked,
-            &dialog,
-            [&dialog, ipEdit]() {
-                QHostAddress hostAddress;
-                if (!hostAddress.setAddress(ipEdit->text().trimmed())) {
-                    QMessageBox::warning(&dialog,
-                                         QObject::tr("IP 地址无效"),
-                                         QObject::tr("请输入有效的下位机 IP 地址。"));
-                    return;
-                }
-
-                dialog.accept();
-            });
+    connect(startBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
 
     // 查询开发板信息按钮：发送询问命令，收到回应后弹窗展示
     connect(queryBoardBtn, &QPushButton::clicked, &dialog, [this, &dialog]() {
@@ -1505,11 +1470,10 @@ void MainWindow::connectToRemoteDevice()
         return;
     }
 
-    m_deviceHost = ipEdit->text().trimmed();
     m_devicePort = static_cast<quint16>(portSpinBox->value());
     m_deviceConnectionPending = true;
     updateDeviceConnectionStatusText();
-    m_deviceManager->connectToDevice(m_deviceHost, m_devicePort);
+    m_deviceManager->startListening(m_devicePort);
 }
 
 /**
@@ -1517,21 +1481,16 @@ void MainWindow::connectToRemoteDevice()
  */
 void MainWindow::updateDeviceConnectionStatusText()
 {
-    if (m_deviceHost.isEmpty()) {
-        m_connectionStatusLabel2->setText(tr("下位机未连接，双击设置 IP/Port"));
-        return;
-    }
-
-    const QString endpoint = tr("%1:%2").arg(m_deviceHost).arg(m_devicePort);
+    const QString endpoint = tr("端口 %1").arg(m_devicePort);
     switch (m_deviceManager->connectionState()) {
     case ConnectionState::Connecting:
-        m_connectionStatusLabel2->setText(tr("下位机连接中: %1").arg(endpoint));
+        m_connectionStatusLabel2->setText(tr("监听中: %1").arg(endpoint));
         break;
     case ConnectionState::Connected:
         m_connectionStatusLabel2->setText(tr("下位机已连接: %1").arg(endpoint));
         break;
     case ConnectionState::Disconnected:
-        m_connectionStatusLabel2->setText(tr("下位机未连接: %1").arg(endpoint));
+        m_connectionStatusLabel2->setText(tr("未监听，双击设置监听端口"));
         break;
     }
 }
@@ -2119,14 +2078,13 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     if (obj == m_connectionStatusLabel2 && event->type() == QEvent::MouseButtonDblClick)
     {
         if (m_deviceManager->connectionState() == ConnectionState::Connecting) {
-            // 正在连接中 → 双击取消连接
-            const auto result = QMessageBox::question(this, tr("取消连接"),
-                tr("设备正在连接中，是否取消？"),
+            // 正在监听中 → 双击停止监听
+            const auto result = QMessageBox::question(this, tr("停止监听"),
+                tr("设备正在监听中，是否停止？"),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (result == QMessageBox::Yes) {
-                // 二次检查：弹窗期间连接可能已完成，只在仍 Connecting 时才断开
                 if (m_deviceManager->connectionState() == ConnectionState::Connecting)
-                    m_deviceManager->disconnectFromDevice();
+                    m_deviceManager->stopListening();
                 m_deviceConnectionPending = false;
                 m_acquisitionPending = false;
                 updateDeviceConnectionStatusText();

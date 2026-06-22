@@ -236,7 +236,7 @@ private:
     DataAcquisitionThread *m_acquisitionThread = nullptr;
     QTimer *m_plotRefreshTimer = nullptr;
     QString m_deviceHost;
-    quint16 m_devicePort = 8899;
+    quint16 m_devicePort = 8080;
     bool m_deviceConnectionPending = false;
     bool m_acquisitionPending = false;
     int m_postGain = 20;  // 后置增益，基准值20→2000，增益越大范围越小（曲线显示越大）

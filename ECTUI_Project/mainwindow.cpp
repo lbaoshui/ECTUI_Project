@@ -283,14 +283,13 @@ void MainWindow::setupFirstRow()
     m_modeInfoLayout = new QVBoxLayout(m_modeInfoFrame);
     m_modeInfoLayout->setContentsMargins(QMargins(2,2,2,2));
 
-    // m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
-    m_modeInfoLabel = new QLabel(this);
+    m_modeInfoLabel = new QLabel(tr("Reflection\nMode"), this);
     m_modeInfoLabel->setAlignment(Qt::AlignCenter);
     QFont modeFont;
     modeFont.setPointSize(10);
     modeFont.setBold(true);
     m_modeInfoLabel->setFont(modeFont);
-    m_modeInfoLabel->setStyleSheet("QLabel { color: #f14c4c; background-color: #252526; border: 1px solid #3c3c3c; padding: 10px; border-radius: 3px; font-size: 50px; text-align: center; }");
+    m_modeInfoLabel->setStyleSheet("QLabel { color: #f14c4c; background-color: #252526; border: 1px solid #3c3c3c; padding: 10px; border-radius: 3px; font-size: 30px; text-align: center; }");
     m_modeInfoLayout->addWidget(m_modeInfoLabel);
 
     // 添加到第一行布局：参数详情占大部分，模式信息占小部分
@@ -462,7 +461,8 @@ void MainWindow::setupSecondRow()
     // m_modeInfoLayout2 = new QVBoxLayout(m_modeInfoFrame2);
 
     // 模式信息显示
-    m_modeInfoLabel2 = new QLabel(tr("Reflection\nMode"), this);
+    // m_modeInfoLabel2 = new QLabel(tr("Reflection\nMode"), this);
+    m_modeInfoLabel2 = new QLabel(this);
     m_modeInfoLabel2->setAlignment(Qt::AlignCenter);
     m_modeInfoLabel2->setFixedWidth(178);
     m_modeInfoLabel2->setFixedHeight(150);
@@ -2189,6 +2189,7 @@ void MainWindow::onLoadDataClicked()
     }
     if (probeNames.isEmpty()) return;
 
+    // 用于选择目标探头，不过暂时没啥用，后面多通道可能可以用到
     bool ok = false;
     const QString sel = QInputDialog::getItem(this, tr("加载数据"),
         tr("选择目标探头:"), probeNames, 0, false, &ok);

@@ -222,7 +222,7 @@ QVector<DaChannelConfig> ProbeManager::buildDaConfig() const
 
     // 默认全部关闭（幅度为 0）
     for (int i = 0; i < DeviceManager::DA_CHANNELS; ++i) {
-        result[i] = {i + 1, 1, 10000, 0, 0};
+        result[i] = {i + 1, 1, 10000, 0, 60};
     }
 
     // 用实际启用的 Probe 配置覆盖

@@ -8,6 +8,15 @@
 #include <algorithm>
 #include <utility>
 
+// #ifdef Q_OS_WIN
+// #include <winsock2.h>
+// #include <mstcpip.h>
+// #else
+// #include <sys/socket.h>
+// #include <netinet/tcp.h>
+// #include <netinet/in.h>
+// #endif
+
 namespace {
 
 // Python 版本中 Vpp 的换算系数为 1.03 * 0.122，这里原样保留。
@@ -47,7 +56,48 @@ qint32 readInt32LE(const char *data)
 {
     return qFromLittleEndian<qint32>(reinterpret_cast<const uchar *>(data));
 }
+/*
+/**
+ * @brief 配置 TCP socket 的 Keep-Alive 参数
+ *
+ * Qt 的 KeepAliveOption 只负责开启 SO_KEEPALIVE（1=on），
+ * 但 Windows 默认空闲 2 小时后才发第一个探测包，对嵌入式场景完全没有意义。
+ * 这里把空闲时间缩短到 5 秒，探测间隔 1 秒，确保连接断开后 10 秒内能感知。
 
+void configureSocketKeepAlive(QTcpSocket *socket)
+{
+    if (!socket)
+        return;
+
+    const qintptr fd = socket->socketDescriptor();
+    if (fd < 0)
+        return;
+
+#ifdef Q_OS_WIN
+    const SOCKET s = static_cast<SOCKET>(fd);
+    struct tcp_keepalive ka;
+    ka.onoff             = 1;
+    ka.keepalivetime     = 5000;   // 空闲 5s 后发第一个 keep-alive 探测
+    ka.keepaliveinterval = 1000;   // 探测间隔 1s
+    DWORD bytesReturned = 0;
+    WSAIoctl(s, SIO_KEEPALIVE_VALS, &ka, sizeof(ka),
+             nullptr, 0, &bytesReturned, nullptr, nullptr);
+#else
+    const int s = static_cast<int>(fd);
+    int optval = 1;
+    setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+
+    optval = 5;   // TCP_KEEPIDLE: idle 5s before first probe
+    setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &optval, sizeof(optval));
+
+    optval = 1;   // TCP_KEEPINTVL: 1s between probes
+    setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, &optval, sizeof(optval));
+
+    optval = 3;   // TCP_KEEPCNT: 3 failed probes → disconnect
+    setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &optval, sizeof(optval));
+#endif
+}
+ */
 } // namespace
 
 const QByteArray DeviceManager::DA_CONF_HEADER =
@@ -142,27 +192,22 @@ void DeviceManager::stopListening()
 {
     qDebug() << "停止监听stopListening\n" ;
     resetStreamingState();
-    qDebug() << "重置流式数据状态\n" ;
-    sendStopAcquisition();  // 发送停止采集命令
-    qDebug() << "发送停止采集命令\n" ;
-    if (m_socket) {
-        qDebug() << "断开socket连接\n" ;
-        m_socket->disconnect();
-        qDebug() << "断开socket连接成功\n" ;
-        if (m_socket->state() != QAbstractSocket::UnconnectedState) {
-            m_socket->waitForDisconnected(1000);
-            qDebug() << "等待断开socket连接完成\n" ;
-        }
-        qDebug() << "删除socket\n" ;
-        m_socket->deleteLater();
-        qDebug() << "删除socket成功\n" ;
-        m_socket = nullptr;
+    QTcpSocket *sock = m_socket;
+    // 仅当 socket 处于有效连接状态时才尝试发送停止采集命令
+    if (m_socket && m_socket->state() == QAbstractSocket::ConnectedState) {
+        qDebug() << "发送停止采集命令\n" ;
+        sendStopAcquisition();
+    }
+    m_socket = nullptr;
+    if (sock) {
+        disconnect(sock, nullptr, this, nullptr);
+        sock->abort();
+        sock->deleteLater();
     }
 
-    m_server->close();
-    delete m_server;
-    m_server = new QTcpServer(this);
-    connect(m_server, &QTcpServer::newConnection, this, &DeviceManager::onNewConnection);
+    if (m_server->isListening()) {
+        m_server->close();
+    }
 
     if (m_connState != ConnectionState::Disconnected) {
         m_connState = ConnectionState::Disconnected;
@@ -507,19 +552,31 @@ void DeviceManager::onNewConnection()
     qDebug() << "收到新连接\n" ;
     while (m_server->hasPendingConnections()) {
         QTcpSocket *clientSocket = m_server->nextPendingConnection();
-        if (!clientSocket)
+        qDebug() << "收到新连接：\n" ;
+        if (!clientSocket){
             continue;
-
+            qDebug() << "新连接无效：\n" ;
+        }
         // 单客户端模式：新连接到来时，直接替换旧连接
-        if (m_socket) {
+        QTcpSocket *oldSocket = m_socket;
+        m_socket = nullptr;
+            
+        if (oldSocket) {
+            qWarning() << "已有下位机连接\n"
+                       << clientSocket->peerAddress()
+                       << clientSocket->peerPort();
             resetStreamingState();
-            // m_socket->disconnectFromHost();
-            m_socket->disconnect();
-            m_socket->deleteLater();
-            m_socket = nullptr;
+            disconnect(oldSocket, nullptr, this, nullptr);
+            oldSocket->abort();
+            oldSocket->deleteLater();
         }
 
         m_socket = clientSocket;
+
+        // 启用 TCP Keep-Alive 并设置 5s 空闲探测，防止下位机/中间设备因空闲超时断开连接
+        // m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
+        // configureSocketKeepAlive(m_socket);
+
         connect(m_socket, &QTcpSocket::disconnected, this, &DeviceManager::onClientDisconnected);
         connect(m_socket, &QTcpSocket::readyRead, this, &DeviceManager::onDataReceived_New);
 
@@ -545,6 +602,8 @@ void DeviceManager::onClientDisconnected()
     if (!sock || sock != m_socket)
         return;
 
+    // disconnected 信号意味着 TCP 连接已经断开，不需要再 wait/close，
+    // 否则可能与正在 waitForBytesWritten() 的 send 操作产生重入冲突
     resetStreamingState();
     m_socket->deleteLater();
     m_socket = nullptr;
@@ -574,9 +633,13 @@ void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
         return;
 
     resetStreamingState();
-    emit errorOccurred(m_socket->errorString());
-    m_socket->deleteLater();
+
     m_socket = nullptr;
+    
+    emit errorOccurred(sock->errorString());
+    // 发生 socket error 时明确关闭底层连接
+    sock->abort();
+    sock->deleteLater();
 
     if (m_server->isListening()) {
         m_connState = ConnectionState::Connecting;

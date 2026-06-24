@@ -2445,6 +2445,7 @@ void MainWindow::onBoardInfoReceived(BoardInfo info)
     }
 }
 
+// 开始采集按钮执行的操作
 void MainWindow::onStartAcquisitionBtnClicked()
 {
     if (m_acquisitionThread->isAcquiring()) {
@@ -2494,6 +2495,7 @@ void MainWindow::startAcquisition()
 
     // 下发 DA 配置（新协议：全局 DDS 频率/相位，所有通道共用）
     m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
+    // m_deviceManager->sendDdsFreqHz();
     qDebug() << "下发 DA 配置\n" ;
     // 设置帧长
     m_deviceManager->sendFrameLength(512);

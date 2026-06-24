@@ -83,7 +83,7 @@ void DataAcquisitionThread::run()
     // m_running.store(1, std::memory_order_relaxed);
     m_running.storeRelaxed(1);
     m_sampleCounter = 0;
-
+    qDebug() << " 进入采集线程：\n";
     while (m_running.loadRelaxed()) {
 
         bool gotData = false;
@@ -212,7 +212,7 @@ void DataAcquisitionThread::run()
             msleep(IDLE_SLEEP_MS);
         }
     }
-
+    qDebug() << "采集线程完成\n" ;
     emit acquisitionStopped();
 }
 

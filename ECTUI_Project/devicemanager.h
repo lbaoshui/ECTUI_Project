@@ -186,7 +186,7 @@ public:
      * 下位机作为 TCP 客户端主动连接本机，本机作为服务端被动接受。
      * 监听结果通过 connectionStateChanged / errorOccurred 信号通知界面层。
      */
-    void startListening(quint16 port = 8899);
+    void startListening(quint16 port = 8080);
     void stopListening();
     ConnectionState connectionState() const { return m_connState; }
     bool isListening() const;

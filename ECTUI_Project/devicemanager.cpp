@@ -114,10 +114,13 @@ DeviceManager::~DeviceManager()
 void DeviceManager::startListening(quint16 port)
 {
     if (m_server->isListening() && m_server->serverPort() == port) {
+        qDebug() << "已经处理连接中状态!\n";
         return;
     }
-
-    stopListening();
+    if (m_connState == ConnectionState::Connecting || m_connState == ConnectionState::Connected) {
+        stopListening();
+    }
+    
 
     m_connState = ConnectionState::Connecting;
     emit connectionStateChanged(m_connState);
@@ -137,18 +140,29 @@ bool DeviceManager::isListening() const
 // 停止监听并断开已有客户端连接
 void DeviceManager::stopListening()
 {
+    qDebug() << "停止监听stopListening\n" ;
     resetStreamingState();
-
+    qDebug() << "重置流式数据状态\n" ;
+    sendStopAcquisition();  // 发送停止采集命令
+    qDebug() << "发送停止采集命令\n" ;
     if (m_socket) {
-        m_socket->disconnectFromHost();
+        qDebug() << "断开socket连接\n" ;
+        m_socket->disconnect();
+        qDebug() << "断开socket连接成功\n" ;
         if (m_socket->state() != QAbstractSocket::UnconnectedState) {
             m_socket->waitForDisconnected(1000);
+            qDebug() << "等待断开socket连接完成\n" ;
         }
+        qDebug() << "删除socket\n" ;
         m_socket->deleteLater();
+        qDebug() << "删除socket成功\n" ;
         m_socket = nullptr;
     }
 
     m_server->close();
+    delete m_server;
+    m_server = new QTcpServer(this);
+    connect(m_server, &QTcpServer::newConnection, this, &DeviceManager::onNewConnection);
 
     if (m_connState != ConnectionState::Disconnected) {
         m_connState = ConnectionState::Disconnected;
@@ -259,8 +273,11 @@ bool DeviceManager::sendNewCmd(quint32 cmd, quint32 param)
     const qint64 written = m_socket->write(frame);
     if (written != frame.size()) {
         emit errorOccurred(QStringLiteral("命令 0x%1 发送失败。").arg(cmd, 8, 16, QLatin1Char('0')));
+        qDebug() << "命令发送失败!\n";
         return false;
     }
+    qDebug() << cmd << "命令发送完成!\n";
+    m_socket->flush();
     return m_socket->waitForBytesWritten(1000);
 }
 
@@ -406,7 +423,7 @@ bool DeviceManager::startSampling()
         emit errorOccurred(QStringLiteral("设备未连接，无法启动采样。"));
         return false;
     }
-
+    qDebug() << "发送开始采集指令\n" ;
     const QByteArray frame = buildStartSampleFrame();
     const qint64 written = m_socket->write(frame);      // 获取实际写入的数据量
     if (written != frame.size()) {                      // 如果写入数据量不相同，则代表数据发送失败
@@ -487,17 +504,19 @@ QVector<float> DeviceManager::calcSensitivity(const QVector<float> &baseline) co
 // QTcpServer 收到新连接，接受下位机 socket
 void DeviceManager::onNewConnection()
 {
+    qDebug() << "收到新连接\n" ;
     while (m_server->hasPendingConnections()) {
         QTcpSocket *clientSocket = m_server->nextPendingConnection();
         if (!clientSocket)
             continue;
 
-        // 如果已有连接，拒绝新的（单客户端模式）
+        // 单客户端模式：新连接到来时，直接替换旧连接
         if (m_socket) {
-            clientSocket->disconnectFromHost();
-            clientSocket->deleteLater();
-            emit errorOccurred(QStringLiteral("已有下位机连接，拒绝新的连接请求。"));
-            continue;
+            resetStreamingState();
+            // m_socket->disconnectFromHost();
+            m_socket->disconnect();
+            m_socket->deleteLater();
+            m_socket = nullptr;
         }
 
         m_socket = clientSocket;
@@ -521,11 +540,15 @@ void DeviceManager::onNewConnection()
 // 客户端 socket 断开
 void DeviceManager::onClientDisconnected()
 {
+    // 仅处理来自当前有效 socket 的信号，忽略已被替换的旧 socket 的延迟信号
+    QTcpSocket *sock = qobject_cast<QTcpSocket *>(sender());
+    if (!sock || sock != m_socket)
+        return;
+
     resetStreamingState();
-    if (m_socket) {
-        m_socket->deleteLater();
-        m_socket = nullptr;
-    }
+    m_socket->deleteLater();
+    m_socket = nullptr;
+
     // 服务端若仍在监听则回到等待连接状态，否则标记为断开
     if (m_server->isListening()) {
         if (m_connState != ConnectionState::Connecting) {
@@ -544,12 +567,17 @@ void DeviceManager::onClientDisconnected()
 void DeviceManager::onSocketError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
+
+    // 仅处理来自当前有效 socket 的信号，忽略已被替换的旧 socket 的延迟信号
+    QTcpSocket *sock = qobject_cast<QTcpSocket *>(sender());
+    if (!sock || sock != m_socket)
+        return;
+
     resetStreamingState();
-    if (m_socket) {
-        emit errorOccurred(m_socket->errorString());
-        m_socket->deleteLater();
-        m_socket = nullptr;
-    }
+    emit errorOccurred(m_socket->errorString());
+    m_socket->deleteLater();
+    m_socket = nullptr;
+
     if (m_server->isListening()) {
         m_connState = ConnectionState::Connecting;
     } else {
@@ -609,6 +637,12 @@ void DeviceManager::onDataReceived()
 // 因此这里先追加到 m_receiveBuffer，再从缓冲区里按“包头 + 长度字段”逐包拆解。
 void DeviceManager::onDataReceived_New()
 {
+    qDebug() << "收到数据\n" ;
+    // 仅处理来自当前有效 socket 的数据，忽略已被替换的旧 socket 的延迟信号
+    QTcpSocket *sock = qobject_cast<QTcpSocket *>(sender());
+    if (!sock || sock != m_socket)
+        return;
+
     // 把本次 socket 已到达的所有字节追加到缓存中。
     // 因为 readAll() 不保证刚好等于一个完整 AD7768 数据包。
     m_receiveBuffer.append(m_socket->readAll());
@@ -867,15 +901,16 @@ bool DeviceManager::parseBoardInfoResponse(const QByteArray &data)
     return true;
 }
 
+// 重置所有流式数据状态，在断联、重连或停止监听时调用，确保新连接从干净状态开始。
 void DeviceManager::resetStreamingState()
 {
-    m_receiveBuffer.clear();
-    m_hasLastNewPacketIndex = false;
+    m_receiveBuffer.clear();                 // 清空 TCP 粘包/半包接收缓冲
+    m_hasLastNewPacketIndex = false;         // 复位丢包检测状态
     m_lastNewPacketIndex = 0;
-    for (auto &buf : m_lockinBuffers) {
+    for (auto &buf : m_lockinBuffers) {     // 清空所有通道的锁相数据缓冲池
         buf->clear();
     }
-    for (auto &buf : m_rawAdcBuffers) {
+    for (auto &buf : m_rawAdcBuffers) {     // 清空所有通道的原始 ADC 数据缓冲池
         buf->clear();
     }
 }

@@ -823,28 +823,52 @@ void MainWindow::setupConnections()
             &DeviceManager::connectionStateChanged,
             this,
             [this](ConnectionState state) {
+                // 检测被动断联：Connected→Connecting 说明客户端断开但 server 仍在监听
+                // Connected→Disconnected 是主动 stopListening，不弹提示
+                static ConnectionState prevState = ConnectionState::Disconnected;
+                const bool disconnected = (prevState == ConnectionState::Connected &&
+                                           state == ConnectionState::Connecting);
+                prevState = state;
+
                 updateDeviceConnectionStatusText();
 
-                if (state != ConnectionState::Connected)
+                if (state == ConnectionState::Connected) {
+                    // 下位机已连接提示
+                    if (m_deviceConnectionPending) {
+                        m_deviceConnectionPending = false;
+                        QMessageBox::information(this,
+                                                 tr("连接设备成功"),
+                                                 tr("下位机已连接到本机端口 %1。")
+                                                     .arg(m_devicePort));
+                    }
+
+                    // 因用户点击"开始采集"而触发的连接 → 自动开始采集
+                    if (m_acquisitionPending) {
+                        m_acquisitionPending = false;
+                        startAcquisition();
+                    }
+
+                    // 连接成功后自动询问开发板信息
+                    m_deviceManager->queryBoardInfo();
                     return;
-
-                // 下位机已连接提示
-                if (m_deviceConnectionPending) {
-                    m_deviceConnectionPending = false;
-                    QMessageBox::information(this,
-                                             tr("连接设备成功"),
-                                             tr("下位机已连接到本机端口 %1。")
-                                                 .arg(m_devicePort));
                 }
 
-                // 因用户点击"开始采集"而触发的连接 → 自动开始采集
-                if (m_acquisitionPending) {
-                    m_acquisitionPending = false;
-                    startAcquisition();
+                // 处理断联
+                if (disconnected) {
+                    if (m_acquisitionThread->isAcquiring()) {
+                        QMessageBox::warning(this,
+                                             tr("下位机断联"),
+                                             tr("下位机 TCP 连接已断开，采集已自动停止。"));
+                        m_acquisitionThread->stop();
+                        m_plotRefreshTimer->stop();
+                        m_saveManager->onAcquisitionStopped();
+                        m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
+                    } else {
+                        QMessageBox::information(this,
+                                                 tr("下位机断联"),
+                                                 tr("下位机 TCP 连接已断开，等待重新连接。"));
+                    }
                 }
-
-                // 连接成功后自动询问开发板信息
-                m_deviceManager->queryBoardInfo();
             });
 
     connect(m_deviceManager,
@@ -854,7 +878,7 @@ void MainWindow::setupConnections()
                 updateDeviceConnectionStatusText();
 
                 if (m_deviceConnectionPending) {
-                    // 监听启动失败或下位机连接异常
+                    // 监听启动失败
                     m_deviceConnectionPending = false;
                     QMessageBox::warning(this,
                                          tr("连接设备失败"),
@@ -862,19 +886,10 @@ void MainWindow::setupConnections()
                                              .arg(m_devicePort)
                                              .arg(message));
                 } else {
-                    // 非主动连接场景（如采集过程中连接意外断开）
+                    // 运行中异常（断联等），connectionStateChanged 中统一处理清理逻辑
                     qWarning() << "[DeviceManager] 错误:" << message;
-
-                    // 如果正在采集，自动停止
-                    if (m_acquisitionThread->isAcquiring()) {
-                        m_acquisitionThread->stop();
-                        m_plotRefreshTimer->stop();
-                        m_saveManager->onAcquisitionStopped();
-                        m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
-                    }
                 }
 
-                // 因采集触发的连接失败 → 清除标志，不开始采集
                 if (m_acquisitionPending) {
                     m_acquisitionPending = false;
                 }
@@ -1473,7 +1488,9 @@ void MainWindow::connectToRemoteDevice()
     m_devicePort = static_cast<quint16>(portSpinBox->value());
     m_deviceConnectionPending = true;
     updateDeviceConnectionStatusText();
+    qDebug() << "开始监听\n" ;
     m_deviceManager->startListening(m_devicePort);
+    qDebug() << "监听结束\n" ;
 }
 
 /**
@@ -2077,7 +2094,37 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
     if (obj == m_connectionStatusLabel2 && event->type() == QEvent::MouseButtonDblClick)
     {
-        if (m_deviceManager->connectionState() == ConnectionState::Connecting) {
+        const ConnectionState cs = m_deviceManager->connectionState();
+
+        if (cs == ConnectionState::Connected) {
+            // 已连接 → 询问是否断开并重新设置
+            const auto result = QMessageBox::question(this, tr("断开连接"),
+                tr("下位机已连接，是否断开并重新设置监听？"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (result == QMessageBox::Yes) {
+                // 如果正在采集，先停止
+                if (m_acquisitionThread->isAcquiring()) {
+                    qDebug() << "停止采集线程\n" ;
+                    m_acquisitionThread->stop();
+                    qDebug() << "停止绘图刷新定时器\n" ;
+                    m_plotRefreshTimer->stop();
+                    qDebug() << "停止数据保存管理器\n" ;
+                    m_saveManager->onAcquisitionStopped();
+                    qDebug() << "更新开始采集按钮文本\n" ;
+                    m_stackStartAcquisitionBtn->setText(tr("开始\n采集"));
+                }
+                qDebug() << "停止监听\n" ;
+                m_deviceManager->stopListening();
+                qDebug() << "清除连接标志\n" ;
+                m_deviceConnectionPending = false;
+                qDebug() << "清除采集标志\n" ;
+                m_acquisitionPending = false;
+                qDebug() << "更新设备连接状态文本\n" ;
+                updateDeviceConnectionStatusText();
+                // 紧接着打开设置对话框
+                connectToRemoteDevice();
+            }
+        } else if (cs == ConnectionState::Connecting) {
             // 正在监听中 → 双击停止监听
             const auto result = QMessageBox::question(this, tr("停止监听"),
                 tr("设备正在监听中，是否停止？"),
@@ -2090,6 +2137,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                 updateDeviceConnectionStatusText();
             }
         } else {
+            // 未监听 → 打开设置对话框
             connectToRemoteDevice();
         }
         return true;
@@ -2446,13 +2494,20 @@ void MainWindow::startAcquisition()
 
     // 下发 DA 配置（新协议：全局 DDS 频率/相位，所有通道共用）
     m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
+    qDebug() << "下发 DA 配置\n" ;
     // 设置帧长
     m_deviceManager->sendFrameLength(512);
+    qDebug() << "下发帧长\n" ;
+    // m_deviceManager->
     // 通知下位机开始上传数据
     m_deviceManager->sendStartAcquisition();
+    qDebug() << "下发开始采集\n" ;
 
     m_saveManager->onAcquisitionStarted();
+    qDebug() << "开始采集线程\n" ;
     m_acquisitionThread->start();
+    qDebug() << "启动绘图刷新定时器\n" ;
     m_plotRefreshTimer->start();
+    qDebug() << "更新开始采集按钮文本\n" ;
     m_stackStartAcquisitionBtn->setText(tr("停止\n采集"));
 }

@@ -323,7 +323,8 @@ bool DeviceManager::sendNewCmd(quint32 cmd, quint32 param)
     }
     qDebug() << cmd << "命令发送完成!\n";
     m_socket->flush();
-    return m_socket->waitForBytesWritten(1000);
+    // return m_socket->waitForBytesWritten(1000);
+    return true;
 }
 
 // 新协议 DA 配置：发送全局 DDS 激励频率和相位，所有通道共用。
@@ -339,13 +340,20 @@ bool DeviceManager::sendDaConfigNew(const QVector<DaChannelConfig> &channels)
         return true;
 
     const DaChannelConfig &ch = channels.first();
-
+    qDebug() << "DDS频率: " << static_cast<quint32>(ch.freq) << "\n";
+    qDebug() << "DDS初始相位：: " << static_cast<quint32>(ch.phase) << "\n";
     // PS 端收到 0xAA55FFD4 后按 fword = round(freqHz * 2^32 / 50e6) 换算 DDS 频率控制字
-    if (!sendDdsFreqHz(static_cast<quint32>(ch.freq)))
+    if (!sendDdsFreqHz(static_cast<quint32>(ch.freq))) {
+        qDebug() << "发送DDS频率失败\n";
         return false;
+    }
+    qDebug() << "发送DDS频率成功\n";
     // 相位字直接透传给 DDS 初始相位寄存器
-    if (!sendDdsPhase(static_cast<quint32>(ch.phase)))
+    if (!sendDdsPhase(static_cast<quint32>(ch.phase))) {
+        qDebug() << "发送DDS 初始相位失败: " << static_cast<quint32>(ch.phase) << "\n";
         return false;
+    }
+    qDebug() << "发送DDS 初始相位成功: ";
     return true;
 }
 

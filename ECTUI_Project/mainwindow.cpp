@@ -844,12 +844,13 @@ void MainWindow::setupConnections()
 
                     // 因用户点击"开始采集"而触发的连接 → 自动开始采集
                     if (m_acquisitionPending) {
+                        qDebug() << "开始采集";
                         m_acquisitionPending = false;
                         startAcquisition();
                     }
 
                     // 连接成功后自动询问开发板信息
-                    m_deviceManager->queryBoardInfo();
+                    // m_deviceManager->queryBoardInfo();
                     return;
                 }
 
@@ -1471,7 +1472,7 @@ void MainWindow::connectToRemoteDevice()
             QMessageBox::information(&dialog, QObject::tr("开发板信息"), msg);
         });
 
-        m_deviceManager->queryBoardInfo();
+        // m_deviceManager->queryBoardInfo();
     });
 
     connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
@@ -2494,7 +2495,7 @@ void MainWindow::startAcquisition()
     }
 
     // 下发 DA 配置（新协议：全局 DDS 频率/相位，所有通道共用）
-    m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
+    // m_deviceManager->sendDaConfigNew(m_probeManager->buildDaConfig());
     // m_deviceManager->sendDdsFreqHz();
     qDebug() << "下发 DA 配置\n" ;
     // 设置帧长
